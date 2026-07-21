@@ -9,7 +9,7 @@ require (
 	github.com/go-ldap/ldap/v3 v3.4.6
 	github.com/google/uuid v1.3.1
 	github.com/gorilla/websocket v1.5.1
-	github.com/spf13/cobra v1.8.0
+	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.8.3
 	github.com/xuri/excelize/v2 v2.8.0
 	golang.org/x/sys v0.26.0
@@ -50,7 +50,7 @@ require (
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.3 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	github.com/xuri/efp v0.0.0-20230802181842-ad255f2331ca // indirect
