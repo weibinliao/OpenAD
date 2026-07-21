@@ -9,8 +9,8 @@
 - [ ] 明确选择并批准开源许可证。
 - [ ] 增加批准后的 `LICENSE`，并在 `README.md` 中引用。
 - [ ] 在 `SECURITY.md` 中公布安全问题私密报告渠道。
-- [ ] 确认标准 Git 仓库根目录，并提交完整源码基线。
-- [ ] 在标准仓库根目录启用 CI。
+- [x] 确认标准 Git 仓库根目录，并提交完整源码基线。
+- [x] 在标准仓库根目录启用 CI。
 
 ## 源码与构建
 
@@ -54,8 +54,8 @@ This checklist records work required before a public OpenAD release. It does not
 - [ ] Explicitly select and approve an open-source license.
 - [ ] Add the approved `LICENSE` and reference it from `README.md`.
 - [ ] Publish a private vulnerability-reporting channel in `SECURITY.md`.
-- [ ] Establish the standard Git repository root and commit the complete source baseline.
-- [ ] Enable CI from the standard repository root.
+- [x] Establish the standard Git repository root and commit the complete source baseline.
+- [x] Enable CI from the standard repository root.
 
 ### Source and Build
 

@@ -29,8 +29,8 @@
 - 保留无关的用户改动。若修改区域重叠，应在现有改动基础上继续处理，不能回退。
 - 清理生成物时遵循 `docs/PROJECT_HYGIENE.md`，优先使用
   `scripts/clean-workspace.ps1`。
-- `<repository-root>` 是规范开发和发布路径。旧工作区存在占用时，先生成干净的 OpenAD
-  发布副本，待句柄释放后再完成物理目录收口。
+- `<repository-root>` 已完成物理迁移，是唯一规范开发和发布路径。旧工作区仅作为本地回退
+  副本，不能作为常规开发或发布入口。
 - 2026-07-15 用户体验升级前的可回退快照位于
   `backups/OpenAD-pre-upgrade-20260715-ux-baseline`。快照包含
   `BACKUP_MANIFEST.json` 和 `SHA256SUMS.csv`，不得当作普通构建缓存删除。
@@ -149,9 +149,9 @@ Repository safety rules:
   configuration unless the files are proven generated.
 - Do not run broad `git clean`, `git reset --hard`, checkout-based rollback, or wildcard deletion of untracked files.
 - Preserve unrelated changes and use `scripts/clean-workspace.ps1` only within the boundaries documented in `docs/PROJECT_HYGIENE.md`.
-- `<repository-root>` is the canonical development and publication path. When a legacy workspace is
-  locked, create a clean OpenAD publication copy first and complete physical consolidation after the
-  handle is released.
+- `<repository-root>` is now a physical, independent Git repository and the only canonical development
+  and publication path. The legacy workspace is a local recovery copy only and must not be used for
+  normal development or publishing.
 - Preserve the verified pre-upgrade snapshot at `backups/OpenAD-pre-upgrade-20260715-ux-baseline`, including its manifest and SHA-256 inventory.
 
 Product and module rules:
