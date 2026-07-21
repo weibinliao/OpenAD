@@ -1,0 +1,60 @@
+name: 缺陷报告 / Bug report
+description: 报告可以稳定复现的 OpenAD 问题。 / Report a reproducible OpenAD problem.
+title: '[缺陷 / Bug] '
+labels:
+  - bug
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题描述 / Problem
+      description: 实际发生了什么？你原本期望什么结果？ / What happened, and what did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 所属模块 / Area
+      options:
+        - 总览 / Overview
+        - 目录浏览 / Directory Explorer
+        - 扫描中心 / Scan Center
+        - 权限分析 / Access Analysis
+        - 报告中心 / Report Center
+        - 风险或审计 / Findings or Audit
+        - 系统设置 / System Settings
+        - Windows 桌面壳 / Windows desktop host
+        - 打包或启动 / Packaging or startup
+        - 后端 API / Backend API
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤 / Reproduction steps
+      placeholder: |
+        1. 打开…… / Open...
+        2. 选择…… / Select...
+        3. 观察…… / Observe...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本或提交号 / Version or commit
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 版本 / Windows version
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据 / Evidence
+      description: 添加截图或脱敏日志，并删除身份、路径和凭据信息。 / Add screenshots or sanitized logs with identities, paths, and credentials removed.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 数据安全确认 / Data safety
+      options:
+        - label: 我已删除密码、令牌、私有目录数据和敏感路径。 / I removed passwords, tokens, private directory data, and sensitive paths.
+          required: true

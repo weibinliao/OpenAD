@@ -1,0 +1,145 @@
+/*
+ * Design tokens — semantic HSL variables.
+ * DARK-FIRST: the product's face is a dark ops console with an amber signal
+ * accent (think k9s / lazygit energy). Light stays available via data-theme.
+ * Values are raw HSL channels so Tailwind can wrap them: hsl(var(--token) / <alpha>).
+ */
+
+html[data-theme='light'] {
+  /* Surfaces */
+  --surface-page: 220 20% 97%;
+  --surface-base: 0 0% 100%;
+  --surface-raised: 220 20% 99%;
+  --surface-sunken: 220 16% 94%;
+  --surface-overlay: 0 0% 100%;
+
+  /* Foreground */
+  --fg-primary: 222 30% 12%;
+  --fg-secondary: 222 14% 32%;
+  --fg-muted: 220 10% 48%;
+  --fg-faint: 220 10% 64%;
+  --fg-on-accent: 0 0% 100%;
+
+  /* Borders */
+  --border-default: 220 14% 88%;
+  --border-strong: 220 13% 78%;
+  --border-focus: 32 95% 48%;
+
+  /* Accent (brand) — amber, matching the dark theme's signal color */
+  --accent: 32 95% 44%;
+  --accent-hover: 30 95% 38%;
+  --accent-soft: 38 92% 92%;
+  --accent-fg: 30 90% 34%;
+
+  /* Status */
+  --success: 152 64% 34%;
+  --success-soft: 152 60% 94%;
+  --warning: 38 92% 42%;
+  --warning-soft: 43 96% 92%;
+  --danger: 0 72% 46%;
+  --danger-soft: 0 86% 96%;
+  --info: 201 90% 40%;
+  --info-soft: 201 94% 94%;
+
+  /* Risk scale (tables, badges, charts) */
+  --risk-critical: 350 80% 44%;
+  --risk-high: 14 88% 48%;
+  --risk-medium: 38 92% 44%;
+  --risk-low: 152 56% 36%;
+  --risk-none: 220 10% 58%;
+
+  /* Charts (categorical) */
+  --chart-1: 217 91% 55%;
+  --chart-2: 172 66% 40%;
+  --chart-3: 262 60% 58%;
+  --chart-4: 38 92% 50%;
+  --chart-5: 340 70% 55%;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px 0 hsl(220 30% 10% / 0.06);
+  --shadow-md: 0 2px 8px -2px hsl(220 30% 10% / 0.1);
+  --shadow-lg: 0 8px 24px -6px hsl(220 30% 10% / 0.16);
+
+  /* Legacy aliases so pre-redesign pages keep rendering during migration */
+  --background: var(--surface-page);
+  --foreground: var(--fg-primary);
+  --primary: var(--accent);
+  --primary-foreground: var(--fg-on-accent);
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--fg-secondary);
+  --muted: var(--surface-sunken);
+  --muted-foreground: var(--fg-muted);
+  --border: var(--border-default);
+
+  color-scheme: light;
+}
+
+:root,
+html[data-theme='dark'] {
+  /* Surfaces — deep, slightly blue near-black */
+  --surface-page: 224 28% 6%;
+  --surface-base: 223 24% 9%;
+  --surface-raised: 222 22% 12%;
+  --surface-sunken: 225 30% 4%;
+  --surface-overlay: 223 22% 11%;
+
+  /* Foreground */
+  --fg-primary: 210 24% 93%;
+  --fg-secondary: 214 14% 74%;
+  --fg-muted: 216 11% 55%;
+  --fg-faint: 218 9% 40%;
+  --fg-on-accent: 30 45% 8%;
+
+  /* Borders */
+  --border-default: 222 16% 19%;
+  --border-strong: 222 14% 30%;
+  --border-focus: 38 95% 55%;
+
+  /* Accent — amber signal, the brand's face */
+  --accent: 38 95% 55%;
+  --accent-hover: 40 96% 62%;
+  --accent-soft: 38 65% 14%;
+  --accent-fg: 40 96% 64%;
+
+  /* Status */
+  --success: 152 56% 46%;
+  --success-soft: 152 40% 14%;
+  --warning: 38 92% 54%;
+  --warning-soft: 38 60% 14%;
+  --danger: 0 80% 60%;
+  --danger-soft: 0 50% 15%;
+  --info: 201 90% 56%;
+  --info-soft: 201 60% 15%;
+
+  /* Risk scale */
+  --risk-critical: 350 84% 58%;
+  --risk-high: 14 90% 58%;
+  --risk-medium: 38 92% 54%;
+  --risk-low: 152 52% 46%;
+  --risk-none: 220 8% 50%;
+
+  /* Charts */
+  --chart-1: 38 95% 58%;
+  --chart-2: 172 60% 48%;
+  --chart-3: 262 66% 66%;
+  --chart-4: 201 90% 56%;
+  --chart-5: 340 74% 62%;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.4);
+  --shadow-md: 0 2px 8px -2px hsl(0 0% 0% / 0.5);
+  --shadow-lg: 0 8px 24px -6px hsl(0 0% 0% / 0.6);
+
+  /* Legacy aliases */
+  --background: var(--surface-page);
+  --foreground: var(--fg-primary);
+  --primary: var(--accent);
+  --primary-foreground: var(--fg-on-accent);
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--fg-secondary);
+  --muted: var(--surface-raised);
+  --muted-foreground: var(--fg-muted);
+  --border: var(--border-default);
+
+  color-scheme: dark;
+}

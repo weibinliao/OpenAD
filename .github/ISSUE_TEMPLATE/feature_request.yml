@@ -1,0 +1,48 @@
+name: 功能需求 / Feature request
+description: 提议改进 OpenAD 工作流或产品能力。 / Propose an OpenAD workflow or capability improvement.
+title: '[功能 / Feature] '
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: user
+    attributes:
+      label: 目标用户和问题 / User and problem
+      description: 谁需要该功能？当前哪些任务困难或无法完成？ / Who needs this, and what is difficult or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: 期望工作流 / Expected workflow
+      description: 描述开始状态、用户操作和期望结果。 / Describe the starting state, user actions, and expected result.
+    validations:
+      required: true
+  - type: dropdown
+    id: module
+    attributes:
+      label: 所属模块 / Module
+      options:
+        - 总览 / Overview
+        - 目录浏览 / Directory Explorer
+        - 扫描中心 / Scan Center
+        - 权限分析 / Access Analysis
+        - 报告中心 / Report Center
+        - 风险或审计 / Findings or Audit
+        - 系统设置 / System Settings
+        - Windows 桌面壳 / Windows desktop host
+        - 后端或扫描器 / Backend or scanner
+        - 需要架构评审的新模块 / New module requiring architecture review
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准 / Acceptance criteria
+      description: 列出可以观察和验证的结果，不要只写实现细节。 / List observable and verifiable outcomes, not only implementation details.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 当前替代方案 / Current alternatives

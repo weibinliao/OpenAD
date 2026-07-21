@@ -1,0 +1,51 @@
+name: Windows 桌面版发布 / Windows Desktop Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 不包含 v 前缀的安装包版本号 / Package version without the v prefix
+        required: false
+        default: 0.1.0
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 准备便携 Go 和 Node 工具链 / Prepare portable Go and Node toolchains
+        shell: powershell
+        run: |
+          .\scripts\setup-portable-go.ps1
+          .\scripts\setup-portable-node.ps1
+
+      - name: 安装 Web 依赖 / Install Web dependencies
+        shell: powershell
+        run: .\tools\node\npm.cmd --prefix .\apps\web ci
+
+      - name: 构建并验证桌面包 / Build and verify desktop package
+        shell: powershell
+        run: |
+          $version = '${{ inputs.version }}'
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $version = '${{ github.ref_name }}'.TrimStart('v')
+          }
+          .\scripts\build-desktop-windows.ps1 -Version $version
+
+      - name: 上传桌面包 / Upload desktop package
+        uses: actions/upload-artifact@v4
+        with:
+          name: openad-windows-${{ github.run_number }}
+          path: dist/PermissionProtector-Windows-Desktop-v*/
+          if-no-files-found: error

@@ -1,0 +1,21 @@
+# Multi-stage build for Windows deployment
+FROM golang:1.21-alpine AS backend-builder
+WORKDIR /app
+COPY apps/backend/ .
+RUN go mod tidy && \
+    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o analyzer-server.exe ./cmd/api && \
+    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o analyzer-cli.exe ./cmd/cli
+
+FROM node:18-alpine AS frontend-builder
+WORKDIR /app
+COPY apps/web/ .
+RUN npm ci && npm run build
+
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+WORKDIR /app
+COPY --from=backend-builder /app/analyzer-server.exe .
+COPY --from=backend-builder /app/analyzer-cli.exe .
+COPY --from=frontend-builder /app/out ./web
+COPY scripts/start-windows.bat .
+EXPOSE 3010 18080
+CMD ["start-windows.bat"]

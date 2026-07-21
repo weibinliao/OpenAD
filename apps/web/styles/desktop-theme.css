@@ -1,0 +1,111 @@
+.pp-desktop-frame-content {
+  --surface-page: 240 10% 4%;
+  --surface-base: 240 6% 10%;
+  --surface-raised: 240 5% 13%;
+  --surface-sunken: 240 8% 7%;
+  --surface-overlay: 240 5% 12%;
+
+  --fg-primary: 240 5% 96%;
+  --fg-secondary: 240 5% 74%;
+  --fg-muted: 240 4% 64%;
+  --fg-faint: 240 4% 46%;
+  --fg-on-accent: 0 0% 100%;
+
+  --border-default: 240 4% 16%;
+  --border-strong: 240 4% 25%;
+  --border-focus: 239 84% 67%;
+
+  --accent: 239 84% 67%;
+  --accent-hover: 239 84% 72%;
+  --accent-soft: 242 42% 19%;
+  --accent-fg: 243 90% 76%;
+
+  --success: 160 66% 52%;
+  --success-soft: 160 42% 14%;
+  --warning: 38 92% 56%;
+  --warning-soft: 38 55% 14%;
+  --danger: 0 91% 71%;
+  --danger-soft: 0 46% 16%;
+  --info: 199 89% 60%;
+  --info-soft: 199 48% 15%;
+
+  --risk-critical: 350 84% 62%;
+  --risk-high: 0 91% 71%;
+  --risk-medium: 38 92% 56%;
+  --risk-low: 160 66% 52%;
+  --risk-none: 240 4% 52%;
+
+  --chart-1: 239 84% 67%;
+  --chart-2: 160 66% 52%;
+  --chart-3: 326 78% 60%;
+  --chart-4: 199 89% 60%;
+  --chart-5: 38 92% 56%;
+
+  --shadow-sm: 0 1px 2px hsl(240 18% 2% / 0.5);
+  --shadow-md: 0 8px 24px -10px hsl(240 18% 2% / 0.7);
+  --shadow-lg: 0 18px 44px -14px hsl(240 18% 2% / 0.78);
+
+  --background: var(--surface-page);
+  --foreground: var(--fg-primary);
+  --primary: var(--accent);
+  --primary-foreground: var(--fg-on-accent);
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--fg-secondary);
+  --muted: var(--surface-raised);
+  --muted-foreground: var(--fg-muted);
+  --border: var(--border-default);
+}
+
+.openad-native[data-theme='light'] .pp-desktop-frame-content {
+  --surface-page: 225 18% 96%;
+  --surface-base: 0 0% 100%;
+  --surface-raised: 225 18% 98%;
+  --surface-sunken: 225 16% 93%;
+  --surface-overlay: 0 0% 100%;
+
+  --fg-primary: 228 24% 13%;
+  --fg-secondary: 226 12% 34%;
+  --fg-muted: 225 9% 46%;
+  --fg-faint: 225 8% 62%;
+  --fg-on-accent: 0 0% 100%;
+
+  --border-default: 225 14% 87%;
+  --border-strong: 225 12% 76%;
+  --border-focus: 239 84% 62%;
+
+  --accent: 239 84% 62%;
+  --accent-hover: 239 74% 55%;
+  --accent-soft: 239 84% 95%;
+  --accent-fg: 239 68% 47%;
+
+  --success: 160 70% 35%;
+  --success-soft: 157 58% 93%;
+  --warning: 36 88% 43%;
+  --warning-soft: 42 90% 92%;
+  --danger: 0 74% 49%;
+  --danger-soft: 0 84% 95%;
+  --info: 199 89% 42%;
+  --info-soft: 199 84% 94%;
+
+  --shadow-sm: 0 1px 2px hsl(225 22% 12% / 0.07);
+  --shadow-md: 0 8px 24px -12px hsl(225 22% 12% / 0.2);
+  --shadow-lg: 0 18px 44px -16px hsl(225 22% 12% / 0.25);
+}
+
+.openad-native[data-theme='geek'] .pp-desktop-frame-content {
+  --surface-page: 150 20% 3%;
+  --surface-base: 150 14% 5%;
+  --surface-raised: 145 12% 8%;
+  --surface-sunken: 150 20% 2%;
+  --surface-overlay: 145 12% 7%;
+  --fg-primary: 140 18% 86%;
+  --fg-secondary: 140 10% 68%;
+  --fg-muted: 140 8% 52%;
+  --border-default: 138 26% 15%;
+  --border-strong: 138 25% 24%;
+  --border-focus: 142 71% 45%;
+  --accent: 142 71% 45%;
+  --accent-hover: 142 69% 54%;
+  --accent-soft: 142 44% 12%;
+  --accent-fg: 142 68% 63%;
+}
