@@ -2,13 +2,15 @@
 
 [中文](#openad-开源发布检查表) | [English](#openad-open-source-release-checklist)
 
-本检查表记录 OpenAD 对外开源前必须完成的工作，但不会代替项目所有者选择法律条款。
+本检查表记录 OpenAD 对外开源前必须完成的工作。许可法律效力以 `LICENSE`、
+`ee/LICENSE` 及项目所有者另行签发的书面商业授权为准。
 
 ## 阻塞性决策
 
-- [ ] 明确选择并批准开源许可证。
-- [ ] 增加批准后的 `LICENSE`，并在 `README.md` 中引用。
-- [ ] 在 `SECURITY.md` 中公布安全问题私密报告渠道。
+- [x] 明确选择并批准 AGPL-3.0 开源许可证以及 `ee/` 商业许可边界。
+- [x] 增加批准后的 `LICENSE`、`LICENSING.md`、`NOTICE` 和 `ee/LICENSE`，并在 `README.md` 中引用。
+- [ ] 在 `SECURITY.md` 中公布可用的安全问题私密报告渠道（当前仍为
+      `<SECURITY_CONTACT_EMAIL>` 占位符；也可启用并确认 GitHub Private Vulnerability Reporting）。
 - [x] 确认标准 Git 仓库根目录，并提交完整源码基线。
 - [x] 在标准仓库根目录启用 CI。
 
@@ -42,18 +44,21 @@
 - [x] `CHANGELOG.md`
 - [x] PR 模板
 - [x] Bug 和功能需求模板
-- [ ] 项目所有者批准后的 `LICENSE`
+- [x] 项目所有者批准后的 `LICENSE` 与 `ee/LICENSE`
+- [x] `CONTRIBUTING.md` 中支持商业再授权的 CLA 条款
 - [ ] 对外支持和联系渠道
 
 ## OpenAD Open-Source Release Checklist
 
-This checklist records work required before a public OpenAD release. It does not replace the project owner's legal license decision.
+This checklist records work required before a public OpenAD release. The controlling legal terms are
+`LICENSE`, `ee/LICENSE`, and any separate written commercial authorization issued by the project owner.
 
 ### Blocking Decisions
 
-- [ ] Explicitly select and approve an open-source license.
-- [ ] Add the approved `LICENSE` and reference it from `README.md`.
-- [ ] Publish a private vulnerability-reporting channel in `SECURITY.md`.
+- [x] Explicitly select and approve AGPL-3.0 and the commercial license boundary for `ee/`.
+- [x] Add the approved `LICENSE`, `LICENSING.md`, `NOTICE`, and `ee/LICENSE`, and reference them from `README.md`.
+- [ ] Publish a working private vulnerability-reporting channel in `SECURITY.md` (currently the
+      `<SECURITY_CONTACT_EMAIL>` placeholder; alternatively enable and confirm GitHub Private Vulnerability Reporting).
 - [x] Establish the standard Git repository root and commit the complete source baseline.
 - [x] Enable CI from the standard repository root.
 
@@ -86,5 +91,6 @@ This checklist records work required before a public OpenAD release. It does not
 - [x] `CHANGELOG.md`
 - [x] Pull request template
 - [x] Bug and feature request templates
-- [ ] Project-owner-approved `LICENSE`
+- [x] Project-owner-approved `LICENSE` and `ee/LICENSE`
+- [x] CLA terms in `CONTRIBUTING.md` supporting commercial sublicensing
 - [ ] Public support and contact channel

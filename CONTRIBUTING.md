@@ -53,7 +53,21 @@
 
 ## 许可证
 
-只有项目所有者明确选择和批准后，才能增加或修改许可证条款。
+OpenAD 仓库主体（明确排除 `ee/`）采用 AGPL-3.0；`ee/` 适用独立商业许可。完整边界见
+`LICENSING.md`。只有项目所有者 Weibin Liao 明确批准后，才能修改许可条款或目录边界。
+
+### 贡献者许可协议（CLA）
+
+向 OpenAD 提交 Pull Request，即表示贡献者同意以下条款：
+
+1. 贡献者保留其贡献的版权。本协议是许可授权，不是版权转让。
+2. 贡献者授予项目所有者 Weibin Liao 一项永久、全球、非独占、不可撤销、免版税且已付清
+   的许可，允许其使用、复制、修改、创作衍生作品、公开展示、公开执行、分发、提供、进口及
+   以其他方式利用该贡献，并**明确包含在任何许可条款（包括 OpenAD 商业许可）下再授权
+   （sublicense）该贡献的权利**。
+3. 贡献者声明其有权作出上述授权，且据其所知，该贡献不侵犯任何第三方的版权、专利、商业
+   秘密或其他权利。贡献者提交雇主或其他主体拥有权利的材料前，必须先取得必要许可。
+4. 每次提交 Pull Request 均视为贡献者已阅读并接受本 CLA；不同意这些条款时，不应提交贡献。
 
 ## Contributing to OpenAD
 
@@ -102,4 +116,25 @@ Record exact commands and results in the pull request template.
 
 Follow `SECURITY.md`. Never commit passwords, tokens, private keys, real directory exports, local databases, audit logs, or scan results containing sensitive paths.
 
-License terms may be added or changed only after explicit selection and approval by the project owner.
+The main OpenAD repository, expressly excluding `ee/`, is licensed under AGPL-3.0. The `ee/` directory
+is governed by a separate commercial license. See `LICENSING.md` for the complete boundary. License
+terms or directory boundaries may be changed only with explicit approval from the project owner,
+Weibin Liao.
+
+#### Contributor License Agreement (CLA)
+
+By submitting a Pull Request to OpenAD, the contributor agrees that:
+
+1. The contributor retains copyright in the contribution. This is a license grant, not a copyright
+   assignment.
+2. The contributor grants project owner Weibin Liao a perpetual, worldwide, non-exclusive,
+   irrevocable, royalty-free, fully paid-up license to use, reproduce, modify, prepare derivative works
+   of, publicly display, publicly perform, distribute, make available, import, and otherwise exploit
+   the contribution, **including the express right to sublicense the contribution under any license
+   terms, including the OpenAD commercial license**.
+3. The contributor represents that they have the right to make this grant and that, to their knowledge,
+   the contribution does not infringe any third party's copyright, patent, trade secret, or other
+   rights. The contributor must obtain any required permission before submitting material owned by an
+   employer or another party.
+4. Each submitted Pull Request constitutes the contributor's acceptance of this CLA. A contributor who
+   does not agree to these terms must not submit a contribution.

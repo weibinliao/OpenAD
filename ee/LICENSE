@@ -1,0 +1,171 @@
+OpenAD Enterprise Commercial License Terms
+Version 1.0 - 2026
+
+Copyright (C) 2026 Weibin Liao. All rights reserved.
+
+中文
+====
+
+1. 定义与适用范围
+
+“许可方”指 Weibin Liao。“被许可方”指获得许可方有效商业授权的个人或法律实体。“商业组件”
+指 OpenAD 仓库 `ee/` 目录中的软件、源码、文档和其他材料。“商业授权”指许可方另行签发、明确
+被许可方身份、适用版本、授权期限、使用范围及费用（如有）的书面授权或双方签署的商业协议。
+
+本条款仅适用于商业组件。除非商业授权明确另有约定，本条款不改变仓库其他部分适用的
+AGPL-3.0，也不向任何人授予 OpenAD 商标权。
+
+2. 授权范围
+
+在被许可方已取得有效商业授权、支付应付费用并持续遵守本条款和商业授权的前提下，许可方授予
+被许可方一项有限的、非独占的、不可转让且不可再授权的权利，仅在商业授权明确的用户数、设备数、
+实例数、组织范围、用途和期限内安装、运行、复制及为内部使用修改商业组件。未取得商业授权时，
+不授予对商业组件的任何许可或使用权。
+
+3. 禁止事项
+
+除商业授权明确允许或不可排除的适用法律明确允许外，被许可方不得：
+
+a. 向任何第三方出售、出租、出借、再许可、发布、分发、转让或以其他方式提供商业组件；
+b. 代表第三方托管商业组件，或将商业组件作为服务局、托管服务、OEM、嵌入式产品或其他
+   商业化产品的一部分提供；
+c. 对商业组件进行逆向工程、反编译、反汇编，或试图获取未提供的源代码、底层结构或算法；
+d. 绕过、禁用、干扰或移除任何授权校验、许可控制、使用限制或技术保护措施；
+e. 删除、隐藏或修改任何版权、所有权、许可或归属声明；
+f. 超出商业授权中约定的范围、数量、用途或期限使用商业组件。
+
+4. 所有权
+
+商业组件仅授予许可，不出售或转让所有权。许可方及其许可人保留商业组件及其衍生作品中的全部
+权利、所有权和利益。被许可方对商业组件提出的修改或反馈的权利归属，应以双方单独签署的商业
+授权为准。
+
+5. 期限与终止
+
+本条款自商业授权规定的生效日开始，在其规定的期限内有效。被许可方严重违反本条款或商业授权，
+且在收到书面通知后 30 日内未予补救的，许可方可以终止授权；对知识产权侵害或故意
+绕过授权校验的违反，许可方可在适用法律允许的范围内立即终止。授权到期或终止后，被许可方必须
+停止使用并删除或销毁其控制下的商业组件及副本，但法律要求保留的归档副本除外。第 3、4、6、
+7、8 条以及按其性质应继续有效的条款在终止后继续有效。
+
+6. 无保证
+
+在适用法律允许的最大范围内，商业组件按“现状”和“可用”状态提供，不附带任何明示、默示、法定
+或其他保证，包括适销性、特定用途适用性、不侵权、准确性、不中断或无错误的保证。任何支持、维护、
+服务级别或补救义务仅在单独的商业授权中明确约定时成立。
+
+7. 责任限制
+
+在适用法律允许的最大范围内，许可方不对任何间接、附带、特殊、惩罚性、示范性或后果性损失，
+以及利润、收入、商誉、数据或业务中断损失承担责任，无论责任理论为何，即使已被告知可能发生。
+许可方因商业组件或本条款产生或相关的累计责任总额，不超过被许可方在引发索赔事件前十二个月内
+就相关商业组件实际支付给许可方的费用。适用法律不得排除或限制的责任不受本条限制。
+
+8. 适用法律与管辖
+
+适用法律：`<GOVERNING_LAW>`
+
+专属管辖法院或争议解决地：`<EXCLUSIVE_JURISDICTION>`
+
+上述字段须经项目所有者取得法律意见并在对外签发商业授权前填写。若单独签署的商业授权对适用
+法律、管辖、责任、保证或其他事项另有约定，以该商业授权为准。
+
+9. 完整约定与优先顺序
+
+本条款与适用的商业授权共同构成双方就商业组件许可事项的约定。二者冲突时，以商业授权为准。
+任何修改或豁免必须由许可方书面确认。条款部分无效不影响其余条款继续有效。
+
+English
+=======
+
+1. Definitions and Scope
+
+"Licensor" means Weibin Liao. "Licensee" means the individual or legal entity that has received a
+valid Commercial Authorization from Licensor. "Commercial Components" means the software, source
+code, documentation, and other materials located in the `ee/` directory of the OpenAD repository.
+"Commercial Authorization" means a separate written authorization issued by Licensor, or a commercial
+agreement signed by the parties, that identifies the Licensee, covered versions, term, scope, and fees,
+if any.
+
+These Terms apply only to the Commercial Components. Unless a Commercial Authorization expressly says
+otherwise, these Terms do not change the AGPL-3.0 terms for the remainder of the repository and grant
+no rights in the OpenAD trademarks.
+
+2. License Grant
+
+Subject to Licensee obtaining a valid Commercial Authorization, paying all applicable fees, and
+continuing to comply with these Terms and that Commercial Authorization, Licensor grants Licensee a
+limited, non-exclusive, non-transferable, non-sublicensable right to install, run, reproduce, and modify
+the Commercial Components solely for Licensee's internal use and only within the users, devices,
+instances, organization, purposes, and term stated in the Commercial Authorization. No license or right
+to use the Commercial Components is granted without a Commercial Authorization.
+
+3. Restrictions
+
+Except as expressly permitted by a Commercial Authorization or by applicable law that cannot be
+excluded, Licensee must not:
+
+a. sell, rent, lease, lend, sublicense, publish, distribute, transfer, or otherwise make the Commercial
+   Components available to any third party;
+b. host the Commercial Components for a third party or provide them as part of a service bureau,
+   managed service, OEM offering, embedded product, or other commercialized offering;
+c. reverse engineer, decompile, disassemble, or attempt to discover source code, underlying structure,
+   or algorithms that have not been provided;
+d. circumvent, disable, interfere with, or remove any authorization check, license control, usage
+   restriction, or technological protection measure;
+e. remove, obscure, or alter any copyright, proprietary, license, or attribution notice; or
+f. use the Commercial Components beyond the scope, quantity, purpose, or term stated in the Commercial
+   Authorization.
+
+4. Ownership
+
+The Commercial Components are licensed, not sold. Licensor and its licensors retain all right, title,
+and interest in the Commercial Components and their derivative works. Ownership of modifications or
+feedback submitted by Licensee must be addressed in the parties' separate Commercial Authorization.
+
+5. Term and Termination
+
+These Terms begin on the effective date stated in the Commercial Authorization and continue for its
+stated term. Licensor may terminate the authorization for Licensee's material breach if the breach is
+not cured within 30 days after written notice. Licensor may terminate immediately, to the extent
+permitted by applicable law, for a breach involving intellectual-property infringement or intentional
+circumvention of an authorization check. Upon expiration or termination,
+Licensee must stop using and delete or destroy all Commercial Components and copies under its control,
+except archival copies required by law. Sections 3, 4, 6, 7, and 8, and provisions that by their nature
+should survive, remain effective after termination.
+
+6. Disclaimer of Warranties
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COMMERCIAL COMPONENTS ARE PROVIDED "AS IS" AND
+"AS AVAILABLE," WITHOUT EXPRESS, IMPLIED, STATUTORY, OR OTHER WARRANTIES, INCLUDING WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, ACCURACY, UNINTERRUPTED OPERATION,
+OR ERROR-FREE OPERATION. SUPPORT, MAINTENANCE, SERVICE LEVELS, OR REMEDIES APPLY ONLY WHEN EXPRESSLY
+STATED IN A SEPARATE COMMERCIAL AUTHORIZATION.
+
+7. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, LICENSOR WILL NOT BE LIABLE FOR INDIRECT, INCIDENTAL,
+SPECIAL, PUNITIVE, EXEMPLARY, OR CONSEQUENTIAL DAMAGES, OR FOR LOST PROFITS, REVENUE, GOODWILL, DATA,
+OR BUSINESS INTERRUPTION, UNDER ANY THEORY OF LIABILITY, EVEN IF ADVISED OF THE POSSIBILITY. LICENSOR'S
+TOTAL AGGREGATE LIABILITY ARISING OUT OF OR RELATING TO THE COMMERCIAL COMPONENTS OR THESE TERMS WILL
+NOT EXCEED THE FEES ACTUALLY PAID TO LICENSOR FOR THE RELEVANT COMMERCIAL COMPONENTS DURING THE TWELVE
+MONTHS BEFORE THE EVENT GIVING RISE TO THE CLAIM. THIS LIMIT DOES NOT APPLY TO LIABILITY THAT APPLICABLE
+LAW DOES NOT ALLOW THE PARTIES TO EXCLUDE OR LIMIT.
+
+8. Governing Law and Jurisdiction
+
+Governing law: `<GOVERNING_LAW>`
+
+Exclusive court or dispute-resolution venue: `<EXCLUSIVE_JURISDICTION>`
+
+The project owner must obtain legal advice and complete these fields before issuing a public commercial
+authorization. If a separately executed Commercial Authorization specifies different terms for
+governing law, jurisdiction, liability, warranties, or another matter, that Commercial Authorization
+controls.
+
+9. Entire Agreement and Priority
+
+These Terms and the applicable Commercial Authorization form the agreement concerning the Commercial
+Components. The Commercial Authorization controls in the event of a conflict. Any amendment or waiver
+must be confirmed in writing by Licensor. If any provision is unenforceable, the remaining provisions
+remain in effect.
