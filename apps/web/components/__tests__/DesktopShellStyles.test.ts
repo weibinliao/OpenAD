@@ -32,11 +32,21 @@ describe('desktop shell runtime status styles', () => {
   });
 
   it('anchors generous WebView resize handles to every outer edge and corner', () => {
-    expect(styles).toMatch(/\.desktop-resize-handle\.is-right[^}]*right:\s*0;[^}]*width:\s*12px;/s);
-    expect(styles).toMatch(/\.desktop-resize-handle\.is-bottom[^}]*bottom:\s*0;[^}]*height:\s*12px;/s);
-    expect(styles).toMatch(/\.desktop-resize-handle\.is-left[^}]*left:\s*0;[^}]*width:\s*12px;/s);
-    expect(styles).toMatch(/\.desktop-resize-handle\.is-top[^}]*top:\s*0;[^}]*height:\s*12px;/s);
+    expect(styles).toMatch(/\.desktop-resize-handle\.is-right[^}]*right:\s*0;[^}]*width:\s*var\(--desktop-resize-edge-width\);/s);
+    expect(styles).toMatch(/\.desktop-resize-handle\.is-bottom[^}]*bottom:\s*0;[^}]*height:\s*var\(--desktop-resize-edge-width\);/s);
+    expect(styles).toMatch(/\.desktop-resize-handle\.is-left[^}]*left:\s*0;[^}]*width:\s*var\(--desktop-resize-edge-width\);/s);
+    expect(styles).toMatch(/\.desktop-resize-handle\.is-top[^}]*top:\s*0;[^}]*height:\s*var\(--desktop-resize-edge-width\);/s);
     expect(styles).toMatch(/\.desktop-resize-handle\.is-top-left[^}]*top:\s*0;[^}]*left:\s*0;[^}]*width:\s*20px;[^}]*height:\s*20px;/s);
+  });
+
+  it('keeps right-edge scrollbars inside the resize hit area without horizontal overflow', () => {
+    const edgeWidth = styles.match(/--desktop-resize-edge-width:\s*(\d+)px;/);
+
+    expect(edgeWidth).not.toBeNull();
+    expect(Number(edgeWidth?.[1])).toBeGreaterThanOrEqual(12);
+    expect(styles).toMatch(
+      /\.desktop-window-content\s*\{[^}]*box-sizing:\s*border-box;[^}]*overflow:\s*hidden;[^}]*padding-right:\s*var\(--desktop-resize-edge-width\);/s,
+    );
   });
 
   it('keeps resize hit areas visually hidden in every interaction state', () => {
@@ -49,5 +59,10 @@ describe('desktop shell runtime status styles', () => {
     expect(styles).not.toContain('.pp-rail-header');
     expect(styles).not.toContain('.pp-rail-brand');
     expect(styles).toMatch(/\.pp-rail-pin\s*\{[^}]*position:\s*absolute;[^}]*top:\s*8px;[^}]*right:\s*8px;/s);
+  });
+
+  it('applies compact density to every table in the workspace', () => {
+    expect(styles).toMatch(/\.pp-workspace-content\.is-compact-tables[^{]*th[^}]*padding-top:\s*4px;/s);
+    expect(styles).toMatch(/\.pp-workspace-content\.is-compact-tables[^{]*td[^}]*padding-bottom:\s*4px;/s);
   });
 });
