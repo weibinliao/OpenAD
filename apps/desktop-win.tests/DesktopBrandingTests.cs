@@ -42,7 +42,12 @@ public sealed class DesktopBrandingTests
         Assert.DoesNotContain("'PermissionProtector Windows Desktop'", buildScript, StringComparison.Ordinal);
         Assert.Contains("OpenAD-Windows-Desktop-v", buildScript, StringComparison.Ordinal);
         Assert.DoesNotContain("PermissionProtector-Windows-Desktop-v", buildScript, StringComparison.Ordinal);
-        Assert.Contains("compatibility filename", buildScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Double-click OpenAD.exe", buildScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("PermissionProtector.exe", buildScript, StringComparison.Ordinal);
+        // The active data directory must be OpenAD. The legacy path may still appear, but only
+        // in the sentence explaining the one-time automatic migration.
+        Assert.Contains("%APPDATA%\\OpenAD", buildScript, StringComparison.Ordinal);
+        Assert.Contains("migrated automatically", buildScript, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -79,7 +84,7 @@ public sealed class DesktopBrandingTests
     [Fact]
     public void AppliesEmbeddedExecutableIconToDesktopWindow()
     {
-        var executablePath = Path.Combine(AppContext.BaseDirectory, "PermissionProtector.exe");
+        var executablePath = Path.Combine(AppContext.BaseDirectory, "OpenAD.exe");
         Assert.True(File.Exists(executablePath), $"Missing desktop executable: {executablePath}");
 
         using var expectedIcon = Icon.ExtractAssociatedIcon(executablePath)

@@ -16,7 +16,7 @@ internal sealed class DesktopRuntime : IDisposable
     private readonly HttpClient http = new(new SocketsHttpHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(2) };
     private readonly List<Process> started = [];
 
-    public string DataDirectory { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PermissionProtector");
+    public string DataDirectory { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenAD");
     public string WebViewDataDirectory { get; private set; } = string.Empty;
     public Uri AppUrl { get; } = new($"http://127.0.0.1:{WebPort}/?desktop_session={Guid.NewGuid():N}");
 
@@ -24,8 +24,9 @@ internal sealed class DesktopRuntime : IDisposable
     {
         var root = FindRuntimeRoot();
         var webRoot = Path.Combine(root, "web");
+        MigrateDataDirectoryIfNeeded();
         WebViewDataDirectory = ResolveWebViewDataDirectory(
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PermissionProtector"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenAD"),
             webRoot);
         Directory.CreateDirectory(DataDirectory);
         Directory.CreateDirectory(WebViewDataDirectory);
@@ -131,6 +132,36 @@ internal sealed class DesktopRuntime : IDisposable
         http.Dispose();
     }
 
+    /// <summary>
+    /// 首次以 OpenAD 数据目录启动时，静默迁移旧 PermissionProtector 目录中的数据。
+    /// 迁移完成或不存在旧目录时，不做任何操作。
+    /// </summary>
+    private void MigrateDataDirectoryIfNeeded()
+    {
+        if (Directory.Exists(DataDirectory))
+        {
+            return;
+        }
+
+        var legacyPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "PermissionProtector");
+
+        if (!Directory.Exists(legacyPath))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.Move(legacyPath, DataDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 迁移失败时新建空目录继续启动，旧数据仍保留在原位。
+        }
+    }
+
     private static string FindRuntimeRoot()
     {
         var roots = new[]
@@ -150,7 +181,7 @@ internal sealed class DesktopRuntime : IDisposable
             }
         }
 
-        throw new InvalidOperationException("Desktop package is incomplete. Keep the OpenAD launcher (PermissionProtector.exe), permission-protector-server.exe, permission-protector-web.exe, and web\\index.html together.");
+        throw new InvalidOperationException("Desktop package is incomplete. Keep OpenAD.exe beside permission-protector-server.exe, permission-protector-web.exe, and web\\index.html.");
     }
 
     private Process Start(string root, string fileName, string arguments, IReadOnlyDictionary<string, string> environment)

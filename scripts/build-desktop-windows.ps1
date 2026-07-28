@@ -115,10 +115,11 @@ Invoke-Step 'Copying fallback launch scripts and desktop notes...' {
     $readme = @(
         'OpenAD Windows Desktop',
         '',
-        'Double-click PermissionProtector.exe (compatibility filename) to start OpenAD.',
+        'Double-click OpenAD.exe to start OpenAD.',
         'OpenAD starts the bundled Go API and static web service locally, then opens the product UI inside WebView2.',
         '',
-        'For compatibility, logs and local data currently remain under %APPDATA%\PermissionProtector.',
+        'Logs and local data are stored under %APPDATA%\OpenAD.',
+        'Data from an earlier %APPDATA%\PermissionProtector installation is migrated automatically on first start.',
         'Fallback browser launcher: start-windows.bat'
     )
     Set-Content -LiteralPath (Join-Path $releaseDir 'README_DESKTOP.txt') -Value $readme -Encoding UTF8
