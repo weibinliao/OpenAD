@@ -4,22 +4,26 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/weibinliao/OpenAD/internal/database"
 	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/weibinliao/OpenAD/internal/scanner"
-	"github.com/google/uuid"
 )
 
 type Request struct {
-	ScanID                      string
-	Path                        string
-	MaxDepth                    int
-	IncludeInherited            bool
-	Progress                    ProgressCallback
-	Context                     context.Context
-	EffectivePermissionExpander EffectivePermissionExpander
+	ScanID                             string
+	Path                               string
+	MaxDepth                           int
+	IncludeInherited                   bool
+	Progress                           ProgressCallback
+	Context                            context.Context
+	EffectivePermissionExpander        EffectivePermissionExpander
+	EffectivePermissionExpanderFactory func() (EffectivePermissionExpander, error)
 }
 
 type EffectivePermissionExpander interface {
@@ -65,13 +69,22 @@ type sessionRepository interface {
 type Service struct {
 	scanner    directoryScanner
 	repository sessionRepository
+	scanSlots  chan struct{}
 }
 
+const defaultMaxConcurrentScans = 1
+
+var ErrScanConcurrencyLimitReached = errors.New("maximum concurrent scans reached")
+
 func New() *Service {
-	return NewWithDependencies(scanner.NewNTFSScanner(), &databaseSessionRepository{})
+	return newService(scanner.NewNTFSScanner(), &databaseSessionRepository{}, maxConcurrentScansFromEnv())
 }
 
 func NewWithDependencies(directoryScanner directoryScanner, repository sessionRepository) *Service {
+	return newService(directoryScanner, repository, defaultMaxConcurrentScans)
+}
+
+func newService(directoryScanner directoryScanner, repository sessionRepository, maxConcurrentScans int) *Service {
 	if directoryScanner == nil {
 		directoryScanner = scanner.NewNTFSScanner()
 	}
@@ -79,18 +92,35 @@ func NewWithDependencies(directoryScanner directoryScanner, repository sessionRe
 	if repository == nil {
 		repository = &databaseSessionRepository{}
 	}
+	if maxConcurrentScans < 1 {
+		maxConcurrentScans = defaultMaxConcurrentScans
+	}
 
 	return &Service{
 		scanner:    directoryScanner,
 		repository: repository,
+		scanSlots:  make(chan struct{}, maxConcurrentScans),
 	}
 }
 
 func (service *Service) Run(request Request) (*Response, error) {
-	startedAt := time.Now().UTC()
+	if !service.tryAcquireScanSlot() {
+		return nil, ErrScanConcurrencyLimitReached
+	}
+	defer service.releaseScanSlot()
+
+	if request.EffectivePermissionExpander == nil && request.EffectivePermissionExpanderFactory != nil {
+		expander, err := request.EffectivePermissionExpanderFactory()
+		if err != nil {
+			return nil, err
+		}
+		request.EffectivePermissionExpander = expander
+	}
 	if closer, ok := request.EffectivePermissionExpander.(interface{ Close() }); ok {
 		defer closer.Close()
 	}
+
+	startedAt := time.Now().UTC()
 
 	session := service.createSession(request, startedAt)
 	sessionID := sessionID(session)
@@ -203,6 +233,43 @@ func (service *Service) Run(request Request) (*Response, error) {
 	})
 
 	return response, nil
+}
+
+func (service *Service) tryAcquireScanSlot() bool {
+	if service.scanSlots == nil {
+		return true
+	}
+
+	select {
+	case service.scanSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (service *Service) releaseScanSlot() {
+	if service.scanSlots != nil {
+		<-service.scanSlots
+	}
+}
+
+func maxConcurrentScansFromEnv() int {
+	for _, key := range []string{"PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS", "FSA_MAX_CONCURRENT_SCANS"} {
+		rawValue := strings.TrimSpace(os.Getenv(key))
+		if rawValue == "" {
+			continue
+		}
+
+		value, err := strconv.Atoi(rawValue)
+		if err != nil || value < 1 {
+			log.Printf("invalid %s=%q; using default maximum concurrent scans: %d", key, rawValue, defaultMaxConcurrentScans)
+			return defaultMaxConcurrentScans
+		}
+		return value
+	}
+
+	return defaultMaxConcurrentScans
 }
 
 func (service *Service) emitProgress(request Request, event ProgressEvent) {

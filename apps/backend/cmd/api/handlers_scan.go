@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/weibinliao/OpenAD/internal/scanservice"
-	"github.com/gin-gonic/gin"
 )
 
 type ScanRequest struct {
@@ -30,6 +30,18 @@ type EffectivePermissionRequest struct {
 	Password             string   `json:"password"`
 	ExcludeGroupPatterns []string `json:"exclude_group_patterns"`
 	ExcludeUserPatterns  []string `json:"exclude_user_patterns"`
+}
+
+type effectivePermissionPreparationError struct {
+	err error
+}
+
+func (err *effectivePermissionPreparationError) Error() string {
+	return fmt.Sprintf("failed to prepare effective permission expansion: %v", err.err)
+}
+
+func (err *effectivePermissionPreparationError) Unwrap() error {
+	return err.err
 }
 
 type PermissionConflictRequest struct {
@@ -56,8 +68,21 @@ func (application *application) handleScan(ctx *gin.Context) {
 	scanID := strings.TrimSpace(request.ScanID)
 	scanContext, cancelScan := context.WithCancel(context.Background())
 	defer cancelScan()
-	application.scanCancels.register(scanID, cancelScan)
-	defer application.scanCancels.remove(scanID)
+	registration, err := application.scanCancels.register(scanID, cancelScan)
+	if errors.Is(err, errScanIDAlreadyActive) {
+		ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	removeRegistrationOnReturn := true
+	defer func() {
+		if removeRegistrationOnReturn {
+			application.scanCancels.remove(scanID, registration)
+		}
+	}()
 
 	requestContext := ctx.Request.Context()
 	go func() {
@@ -68,8 +93,7 @@ func (application *application) handleScan(ctx *gin.Context) {
 		}
 	}()
 
-	var err error
-	var expander scanservice.EffectivePermissionExpander
+	var expanderFactory func() (scanservice.EffectivePermissionExpander, error)
 	if shouldUseEffectivePermissionExpansion(request.EffectivePermissions) {
 		// Resolve a stored connection_id into inline credentials when supplied,
 		// so callers can trigger AD-aware scans without re-entering credentials.
@@ -96,33 +120,38 @@ func (application *application) handleScan(ctx *gin.Context) {
 			return
 		}
 
-		expander, err = application.ad.NewEffectivePermissionExpander(
-			request.EffectivePermissions.Server,
-			request.EffectivePermissions.BaseDN,
-			request.EffectivePermissions.Username,
-			request.EffectivePermissions.Password,
-			request.EffectivePermissions.ExcludeGroupPatterns,
-			request.EffectivePermissions.ExcludeUserPatterns,
-		)
-		if err != nil {
-			ctx.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to prepare effective permission expansion: %v", err)})
-			return
+		effectivePermissions := *request.EffectivePermissions
+		expanderFactory = func() (scanservice.EffectivePermissionExpander, error) {
+			expander, factoryErr := application.ad.NewEffectivePermissionExpander(
+				effectivePermissions.Server,
+				effectivePermissions.BaseDN,
+				effectivePermissions.Username,
+				effectivePermissions.Password,
+				effectivePermissions.ExcludeGroupPatterns,
+				effectivePermissions.ExcludeUserPatterns,
+			)
+			if factoryErr != nil {
+				return nil, &effectivePermissionPreparationError{err: factoryErr}
+			}
+			return expander, nil
 		}
 	}
 
 	resultChannel := make(chan *scanservice.Response, 1)
 	errorChannel := make(chan error, 1)
+	scanFinished := make(chan struct{})
 
 	go func() {
 		result, err := application.scans.Run(scanservice.Request{
-			ScanID:                      scanID,
-			Path:                        request.Path,
-			MaxDepth:                    depth,
-			IncludeInherited:            includeInherited,
-			Progress:                    application.buildScanProgressCallback(scanID),
-			Context:                     scanContext,
-			EffectivePermissionExpander: expander,
+			ScanID:                             scanID,
+			Path:                               request.Path,
+			MaxDepth:                           depth,
+			IncludeInherited:                   includeInherited,
+			Progress:                           application.buildScanProgressCallback(scanID),
+			Context:                            scanContext,
+			EffectivePermissionExpanderFactory: expanderFactory,
 		})
+		close(scanFinished)
 		if err != nil {
 			errorChannel <- err
 			return
@@ -133,11 +162,22 @@ func (application *application) handleScan(ctx *gin.Context) {
 
 	select {
 	case err := <-errorChannel:
+		var preparationErr *effectivePermissionPreparationError
 		if errors.Is(err, context.Canceled) {
 			ctx.JSON(http.StatusOK, gin.H{
 				"scan_id": scanID,
 				"status":  "cancelled",
 				"message": "scan cancelled",
+			})
+			return
+		}
+		if errors.As(err, &preparationErr) {
+			ctx.JSON(http.StatusBadGateway, gin.H{"error": preparationErr.Error()})
+			return
+		}
+		if errors.Is(err, scanservice.ErrScanConcurrencyLimitReached) {
+			ctx.JSON(http.StatusConflict, gin.H{
+				"error": "maximum concurrent scans reached; wait for the active scan to finish or cancel it before retrying",
 			})
 			return
 		}
@@ -147,6 +187,12 @@ func (application *application) handleScan(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, result)
 		return
 	case <-ctx.Request.Context().Done():
+		cancelScan()
+		removeRegistrationOnReturn = false
+		go func() {
+			<-scanFinished
+			application.scanCancels.remove(scanID, registration)
+		}()
 		return
 	}
 }

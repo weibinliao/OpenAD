@@ -2,34 +2,48 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
 
-	"github.com/weibinliao/OpenAD/internal/scanservice"
 	"github.com/gin-gonic/gin"
+	"github.com/weibinliao/OpenAD/internal/scanservice"
 )
 
 type scanCancelRegistry struct {
 	mutex   sync.Mutex
-	cancels map[string]context.CancelFunc
+	cancels map[string]*scanCancelRegistration
 }
+
+type scanCancelRegistration struct {
+	cancel          context.CancelFunc
+	cancelRequested bool
+}
+
+var errScanIDAlreadyActive = errors.New("scan id is already active")
 
 func newScanCancelRegistry() *scanCancelRegistry {
 	return &scanCancelRegistry{
-		cancels: make(map[string]context.CancelFunc),
+		cancels: make(map[string]*scanCancelRegistration),
 	}
 }
 
-func (registry *scanCancelRegistry) register(scanID string, cancel context.CancelFunc) {
+func (registry *scanCancelRegistry) register(scanID string, cancel context.CancelFunc) (*scanCancelRegistration, error) {
 	scanID = strings.TrimSpace(scanID)
 	if scanID == "" || cancel == nil {
-		return
+		return nil, nil
 	}
 
 	registry.mutex.Lock()
-	registry.cancels[scanID] = cancel
-	registry.mutex.Unlock()
+	defer registry.mutex.Unlock()
+	if _, exists := registry.cancels[scanID]; exists {
+		return nil, errScanIDAlreadyActive
+	}
+
+	registration := &scanCancelRegistration{cancel: cancel}
+	registry.cancels[scanID] = registration
+	return registration, nil
 }
 
 func (registry *scanCancelRegistry) cancel(scanID string) bool {
@@ -39,9 +53,10 @@ func (registry *scanCancelRegistry) cancel(scanID string) bool {
 	}
 
 	registry.mutex.Lock()
-	cancel, ok := registry.cancels[scanID]
-	if ok {
-		delete(registry.cancels, scanID)
+	registration, ok := registry.cancels[scanID]
+	shouldCancel := ok && !registration.cancelRequested
+	if shouldCancel {
+		registration.cancelRequested = true
 	}
 	registry.mutex.Unlock()
 
@@ -49,19 +64,27 @@ func (registry *scanCancelRegistry) cancel(scanID string) bool {
 		return false
 	}
 
-	cancel()
+	if shouldCancel {
+		registration.cancel()
+	}
 	return true
 }
 
-func (registry *scanCancelRegistry) remove(scanID string) {
+func (registry *scanCancelRegistry) remove(scanID string, registration *scanCancelRegistration) bool {
 	scanID = strings.TrimSpace(scanID)
-	if scanID == "" {
-		return
+	if scanID == "" || registration == nil {
+		return false
 	}
 
 	registry.mutex.Lock()
+	defer registry.mutex.Unlock()
+	current, exists := registry.cancels[scanID]
+	if !exists || current != registration {
+		return false
+	}
+
 	delete(registry.cancels, scanID)
-	registry.mutex.Unlock()
+	return true
 }
 
 func (application *application) handleCancelScan(context *gin.Context) {

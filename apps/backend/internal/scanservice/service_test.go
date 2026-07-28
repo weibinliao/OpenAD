@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/weibinliao/OpenAD/internal/models"
-	"github.com/weibinliao/OpenAD/internal/scanner"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weibinliao/OpenAD/internal/models"
+	"github.com/weibinliao/OpenAD/internal/scanner"
 )
 
 func TestNewService(t *testing.T) {
@@ -240,6 +240,70 @@ func TestRunMarksSessionCancelledWhenScannerReturnsCanceled(t *testing.T) {
 	assert.Equal(t, 0, repository.completeCalls)
 }
 
+func TestRunRejectsImmediatelyWhenConcurrencyLimitIsReached(t *testing.T) {
+	blockingScanner := &blockingDirectoryScanner{
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	service := newService(blockingScanner, &stubSessionRepository{}, 1)
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := service.Run(Request{Path: `C:\First`, Context: context.Background()})
+		firstDone <- err
+	}()
+
+	select {
+	case <-blockingScanner.started:
+	case <-time.After(time.Second):
+		t.Fatal("first scan did not start")
+	}
+
+	startedAt := time.Now()
+	factoryCalls := 0
+	response, err := service.Run(Request{
+		Path:    `C:\Second`,
+		Context: context.Background(),
+		EffectivePermissionExpanderFactory: func() (EffectivePermissionExpander, error) {
+			factoryCalls++
+			return &stubEffectivePermissionExpander{}, nil
+		},
+	})
+	assert.Nil(t, response)
+	assert.ErrorIs(t, err, ErrScanConcurrencyLimitReached)
+	assert.Less(t, time.Since(startedAt), 100*time.Millisecond)
+	assert.Zero(t, factoryCalls)
+
+	close(blockingScanner.release)
+	require.NoError(t, <-firstDone)
+}
+
+func TestMaxConcurrentScansFromEnvUsesPrimaryAndCompatibilityVariables(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		t.Setenv("PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS", "")
+		t.Setenv("FSA_MAX_CONCURRENT_SCANS", "")
+		assert.Equal(t, 1, maxConcurrentScansFromEnv())
+	})
+
+	t.Run("primary", func(t *testing.T) {
+		t.Setenv("PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS", "2")
+		t.Setenv("FSA_MAX_CONCURRENT_SCANS", "3")
+		assert.Equal(t, 2, maxConcurrentScansFromEnv())
+	})
+
+	t.Run("compatibility fallback", func(t *testing.T) {
+		t.Setenv("PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS", "")
+		t.Setenv("FSA_MAX_CONCURRENT_SCANS", "2")
+		assert.Equal(t, 2, maxConcurrentScansFromEnv())
+	})
+
+	t.Run("invalid falls back to default", func(t *testing.T) {
+		t.Setenv("PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS", "unlimited")
+		t.Setenv("FSA_MAX_CONCURRENT_SCANS", "")
+		assert.Equal(t, 1, maxConcurrentScansFromEnv())
+	})
+}
+
 func TestNewWithDependenciesFallsBackToDefaultImplementations(t *testing.T) {
 	service := NewWithDependencies(nil, nil)
 	require.NotNil(t, service)
@@ -263,6 +327,26 @@ type stubDirectoryScanner struct {
 
 	receivedPath    string
 	receivedOptions scanner.Options
+}
+
+type blockingDirectoryScanner struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (scannerStub *blockingDirectoryScanner) ScanDirectory(path string, options scanner.Options) (*scanner.Result, error) {
+	scannerStub.started <- struct{}{}
+	select {
+	case <-scannerStub.release:
+	case <-options.Context.Done():
+		return nil, options.Context.Err()
+	}
+
+	return &scanner.Result{
+		RootPath:         path,
+		MaxDepth:         options.MaxDepth,
+		IncludeInherited: options.IncludeInherited,
+	}, nil
 }
 
 func (scannerStub *stubDirectoryScanner) ScanDirectory(path string, options scanner.Options) (*scanner.Result, error) {
