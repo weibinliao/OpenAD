@@ -25,10 +25,16 @@ import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import {
   RISK_FINDINGS_UPDATED_EVENT,
   readRiskFindings,
+  sortRiskFindingsByPriority,
   summarizeRiskFindings,
   type RiskFinding,
 } from '../lib/riskFindings';
 import type { DashboardSessionSummary } from '../lib/dashboardSummary';
+import { QuickConnectCard } from '../components/QuickConnectCard';
+import { Button } from '../components/ui/button';
+import { EmptyState } from '../components/ui/empty-state';
+import { Skeleton } from '../components/ui/skeleton';
+import { riskLabel, scanStatusLabel } from '../components/ui/badge';
 
 interface SessionsResponse {
   items?: DashboardSessionSummary[];
@@ -46,50 +52,6 @@ interface OverviewRisk {
   rights: string;
 }
 
-const fallbackSessions: DashboardSessionSummary[] = [
-  {
-    id: 'sample-scan-finance',
-    root_path: String.raw`\\fs01\Finance`,
-    status: 'completed',
-    max_depth: 6,
-    include_inherited: true,
-    items_scanned: 126,
-    permission_count: 1741,
-    started_at: new Date(Date.now() - 1000 * 60 * 130).toISOString(),
-    finished_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-  },
-  {
-    id: 'sample-scan-software',
-    root_path: String.raw`\\files.example.com\software\example-team`,
-    status: 'completed',
-    max_depth: 4,
-    include_inherited: true,
-    items_scanned: 40,
-    permission_count: 286,
-    started_at: new Date(Date.now() - 1000 * 60 * 24).toISOString(),
-    finished_at: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
-  },
-];
-
-const fallbackRisks: OverviewRisk[] = [
-  {
-    id: 'sample-risk-finance',
-    severity: 'high',
-    title: 'Everyone 可修改财务共享',
-    path: String.raw`\\fs01\Finance\Payroll`,
-    trustee: 'Everyone',
-    rights: 'Modify',
-  },
-  {
-    id: 'sample-risk-domain-users',
-    severity: 'medium',
-    title: 'Domain Users 继承范围需要复核',
-    path: String.raw`\\files.example.com\software\example-team`,
-    trustee: 'EXAMPLE\\Domain Users',
-    rights: 'Read & Execute',
-  },
-];
-
 export default function OpenADOverview() {
   const router = useRouter();
   const { locale } = useI18n();
@@ -98,11 +60,15 @@ export default function OpenADOverview() {
   const [sessions, setSessions] = useState<DashboardSessionSummary[]>([]);
   const [sessionsTotal, setSessionsTotal] = useState(0);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState('');
   const [risks, setRisks] = useState<RiskFinding[]>([]);
   const isChinese = locale === 'zh-CN';
   const text = (zh: string, en: string) => (isChinese ? zh : en);
 
   const loadSessions = useCallback(async () => {
+    setSessionsLoading(true);
+    setSessionsError('');
     try {
       const response = await fetch(`${apiBase()}/api/sessions?status=completed&page=1&page_size=6`);
       const data = (await response.json().catch(() => ({}))) as SessionsResponse;
@@ -111,10 +77,13 @@ export default function OpenADOverview() {
       setSessions(items);
       setSessionsTotal(data.pagination?.total ?? items.length);
       setBackendOnline(true);
-    } catch {
+    } catch (requestError) {
       setSessions([]);
       setSessionsTotal(0);
       setBackendOnline(false);
+      setSessionsError(requestError instanceof Error ? requestError.message : 'sessions unavailable');
+    } finally {
+      setSessionsLoading(false);
     }
   }, []);
 
@@ -128,10 +97,8 @@ export default function OpenADOverview() {
   }, [loadRisks, loadSessions]);
 
   const riskSummary = useMemo(() => summarizeRiskFindings(risks), [risks]);
-  const displaySessions = sessions.length > 0 ? sessions : fallbackSessions;
   const displayRisks = useMemo<OverviewRisk[]>(() => {
-    const realRisks = risks
-      .filter((risk) => risk.status === 'open')
+    return sortRiskFindingsByPriority(risks.filter((risk) => risk.status === 'open'))
       .slice(0, 3)
       .map((risk) => ({
         id: risk.id,
@@ -141,13 +108,17 @@ export default function OpenADOverview() {
         trustee: risk.trustee,
         rights: risk.rights,
       }));
-    return realRisks.length > 0 ? realRisks : fallbackRisks;
   }, [risks]);
   const latestSession = sessions[0] || null;
-  const highRiskCount = riskSummary.critical + riskSummary.high
-    || displayRisks.filter((risk) => risk.severity === 'critical' || risk.severity === 'high').length;
+  const highRiskCount = riskSummary.critical + riskSummary.high;
   const connected = Boolean(activeProfile || connection.connected);
-  const showingSamples = backendOnline === false || (sessions.length === 0 && risks.length === 0);
+  const riskBars = [
+    { key: 'critical', label: text('严重', 'Critical'), value: riskSummary.critical },
+    { key: 'high', label: text('高危', 'High'), value: riskSummary.high },
+    { key: 'medium', label: text('中危', 'Medium'), value: riskSummary.medium },
+    { key: 'low', label: text('低危', 'Low'), value: riskSummary.low },
+  ] as const;
+  const maxRiskCount = Math.max(1, ...riskBars.map((bar) => bar.value));
 
   const statusItems = [
     {
@@ -171,8 +142,12 @@ export default function OpenADOverview() {
     {
       key: 'scan',
       label: text('最近扫描', 'Latest Scan'),
-      value: latestSession ? formatCompact(latestSession.items_scanned) : text('暂无真实扫描', 'No live scan yet'),
-      detail: latestSession?.root_path || text('进入扫描中心创建任务', 'Create a task in Scan Center'),
+      value: latestSession
+        ? `${formatCompact(latestSession.items_scanned)} ${text('个对象', 'items')}`
+        : text('暂无真实扫描', 'No live scan yet'),
+      detail: latestSession
+        ? `${formatNumber(latestSession.permission_count)} ${text('个权限项', 'ACL entries')} · ${text('完成于', 'Completed')} ${formatDateTime(latestSession.finished_at || latestSession.started_at, locale)}`
+        : text('进入扫描中心创建任务', 'Create a task in Scan Center'),
       icon: HardDrive,
       tone: latestSession ? 'success' : 'neutral',
       href: '/scan-workspace',
@@ -249,7 +224,7 @@ export default function OpenADOverview() {
     { label: text('目录身份数据', 'Directory identity data'), ready: connected, warning: false },
     { label: text('权限扫描数据', 'Permission scan data'), ready: sessions.length > 0, warning: backendOnline === false },
     { label: text('有效权限分析', 'Effective access analysis'), ready: connected && sessions.length > 0, warning: false },
-    { label: text('风险治理证据', 'Risk governance evidence'), ready: risks.length > 0, warning: showingSamples },
+    { label: text('风险治理证据', 'Risk governance evidence'), ready: risks.length > 0, warning: false },
   ];
 
   return (
@@ -274,6 +249,12 @@ export default function OpenADOverview() {
           <StatusItem key={item.key} label={item.label} value={item.value} detail={item.detail} icon={item.icon} tone={item.tone} onClick={() => void router.push(item.href)} />
         ))}
       </section>
+
+      {!connected ? (
+        <section className="openad-overview-quick-connect" aria-label={text('快速连接 Active Directory', 'Quick Active Directory connection')}>
+          <QuickConnectCard className="openad-quick-connect-card" />
+        </section>
+      ) : null}
 
       <div className="openad-operations-grid">
         <section className="openad-tool-panel">
@@ -307,8 +288,34 @@ export default function OpenADOverview() {
               {text('查看全部', 'View all')} <ArrowRight className="h-3 w-3" aria-hidden />
             </button>
           </div>
+          <div className="openad-risk-distribution" aria-label={text('风险级别分布', 'Risk distribution')}>
+            <div className="openad-risk-distribution-title">{text('风险级别分布', 'Risk distribution')}</div>
+            <div className="openad-risk-distribution-grid">
+              {riskBars.map((bar) => (
+                <div className="openad-risk-bar" key={bar.key}>
+                  <span>{bar.label}</span>
+                  <strong>{bar.value}</strong>
+                  <span className="openad-risk-track" aria-hidden>
+                    <span
+                      className={`openad-risk-fill is-${bar.key}`}
+                      data-testid={`risk-bar-${bar.key}`}
+                      style={{ width: `${Math.round((bar.value / maxRiskCount) * 100)}%` }}
+                    />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
           <div className="openad-attention-list">
-            {displayRisks.map((risk) => (
+            {displayRisks.length === 0 ? (
+              <EmptyState
+                icon={ShieldCheck}
+                title={text('当前没有待复核风险', 'No risks require review')}
+                description={text('完成权限扫描后，风险发现会在此列出需要处理的证据。', 'Complete a permission scan to populate this queue with actionable evidence.')}
+                action={<Button size="sm" onClick={() => void router.push('/scan-workspace')}>{text('前往扫描中心', 'Open Scan Center')}</Button>}
+                className="py-8"
+              />
+            ) : displayRisks.map((risk) => (
               <button
                 key={risk.id}
                 className="openad-attention-row"
@@ -320,7 +327,7 @@ export default function OpenADOverview() {
                   <strong>{risk.title}</strong>
                   <span>{risk.trustee} · {risk.rights}</span>
                 </span>
-                <span className="openad-risk-right">{risk.severity}</span>
+                <span className="openad-risk-right">{riskLabel(risk.severity, locale)}</span>
               </button>
             ))}
           </div>
@@ -338,26 +345,56 @@ export default function OpenADOverview() {
               {text('扫描历史', 'Scan history')} <ArrowRight className="h-3 w-3" aria-hidden />
             </button>
           </div>
-          <table className="openad-activity-table">
-            <thead>
-              <tr>
-                <th>{text('资源路径', 'Resource path')}</th>
-                <th>{text('状态', 'State')}</th>
-                <th>{text('权限项', 'ACL entries')}</th>
-                <th>{text('完成时间', 'Completed')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displaySessions.slice(0, 4).map((session) => (
-                <tr key={session.id}>
-                  <td><span className="openad-activity-path">{session.root_path}</span></td>
-                  <td><span className="openad-state-label">{session.status}</span></td>
-                  <td>{formatCompact(session.permission_count)}</td>
-                  <td>{formatRelative(session.finished_at || session.started_at, isChinese)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {sessionsLoading ? (
+            <div role="status" aria-label={text('正在加载最近活动', 'Loading recent activity')} className="space-y-2 p-3">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ) : sessionsError ? (
+            <EmptyState
+              icon={AlertTriangle}
+              title={text('最近活动暂不可用', 'Recent activity unavailable')}
+              description={text('本地历史接口当前不可用。请检查本地 API 后重试。', 'The local history endpoint is unavailable. Check the local API and retry.')}
+              action={
+                <Button aria-label={text('重试加载最近活动', 'Retry loading recent activity')} size="sm" onClick={() => void loadSessions()}>
+                  <RefreshCw className="h-3.5 w-3.5" /> {text('重试', 'Retry')}
+                </Button>
+              }
+              className="py-8"
+            />
+          ) : sessions.length === 0 ? (
+            <EmptyState
+              icon={Clock3}
+              title={text('还没有已完成扫描', 'No completed scans yet')}
+              description={text('先在扫描中心完成一次扫描，最近活动会在这里显示。', 'Complete a scan in Scan Center to populate recent activity.')}
+              action={<Button size="sm" onClick={() => void router.push('/scan-workspace')}>{text('前往扫描中心', 'Open Scan Center')}</Button>}
+              className="py-8"
+            />
+          ) : (
+            <div className="openad-table-scroll">
+              <table className="openad-activity-table">
+                <thead>
+                  <tr>
+                    <th>{text('资源路径', 'Resource path')}</th>
+                    <th>{text('状态', 'State')}</th>
+                    <th>{text('权限项', 'ACL entries')}</th>
+                    <th>{text('完成时间', 'Completed')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.slice(0, 4).map((session) => (
+                    <tr key={session.id}>
+                      <td><span className="openad-activity-path" title={session.root_path}>{session.root_path}</span></td>
+                      <td><span className="openad-state-label">{scanStatusLabel(session.status, locale)}</span></td>
+                      <td>{formatCompact(session.permission_count)}</td>
+                      <td>{formatRelative(session.finished_at || session.started_at, isChinese)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         <div className="flex min-w-0 flex-col gap-[14px]">
@@ -433,7 +470,7 @@ function StatusItem({
       <span className="openad-status-copy">
         <span>{label}</span>
         <strong>{value}</strong>
-        <small>{detail}</small>
+        <small title={detail}>{detail}</small>
       </span>
     </button>
   );
@@ -450,6 +487,22 @@ function formatCompact(value: number) {
     notation: value >= 1000 ? 'compact' : 'standard',
     maximumFractionDigits: 1,
   }).format(value);
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat('en-US').format(value);
+}
+
+function formatDateTime(value: string | undefined, locale: string) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function formatRelative(value: string | undefined, isChinese: boolean) {
