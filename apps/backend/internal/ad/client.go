@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/go-ldap/ldap/v3"
+	"github.com/weibinliao/OpenAD/internal/models"
 )
 
 type ADClient struct {
@@ -150,6 +150,14 @@ func (c *ADClient) SearchUsers(query string, limit int) ([]User, error) {
 }
 
 func (c *ADClient) SearchGroups(query string, limit int) ([]models.ADGroup, error) {
+	return c.SearchGroupsContext(context.Background(), query, limit)
+}
+
+func (c *ADClient) SearchGroupsContext(ctx context.Context, query string, limit int) ([]models.ADGroup, error) {
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
+
 	trimmedQuery := strings.TrimSpace(query)
 	if trimmedQuery == "" {
 		return nil, fmt.Errorf("query is required")
@@ -169,7 +177,7 @@ func (c *ADClient) SearchGroups(query string, limit int) ([]models.ADGroup, erro
 		nil,
 	)
 
-	sr, err := c.conn.Search(searchRequest)
+	sr, err := c.searchWithContext(ctx, searchRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -183,9 +191,11 @@ func (c *ADClient) SearchGroups(query string, limit int) ([]models.ADGroup, erro
 }
 
 func (c *ADClient) GetGroup(ctx context.Context, distinguishedName string) (*models.ADGroup, error) {
-	_ = ctx
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
 
-	entry, err := c.lookupEntryByDN(distinguishedName, []string{"dn", "sAMAccountName", "cn", "displayName", "member"})
+	entry, err := c.lookupEntryByDN(ctx, distinguishedName, []string{"dn", "sAMAccountName", "cn", "displayName", "member"})
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +208,10 @@ func (c *ADClient) GetGroup(ctx context.Context, distinguishedName string) (*mod
 	group.Members = make([]models.ADPrincipal, 0, len(memberDNs))
 
 	for _, memberDN := range memberDNs {
+		if err := contextError(ctx); err != nil {
+			return nil, err
+		}
+
 		member, err := c.GetPrincipal(ctx, memberDN)
 		if err != nil {
 			return nil, err
@@ -210,9 +224,11 @@ func (c *ADClient) GetGroup(ctx context.Context, distinguishedName string) (*mod
 }
 
 func (c *ADClient) GetPrincipal(ctx context.Context, distinguishedName string) (*models.ADPrincipal, error) {
-	_ = ctx
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
 
-	entry, err := c.lookupEntryByDN(distinguishedName, []string{"dn", "objectClass", "sAMAccountName", "cn", "displayName", "objectSid", "member", "mail", "userPrincipalName", "givenName", "sn", "department", "division"})
+	entry, err := c.lookupEntryByDN(ctx, distinguishedName, []string{"dn", "objectClass", "sAMAccountName", "cn", "displayName", "objectSid", "member", "mail", "userPrincipalName", "givenName", "sn", "department", "division"})
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +241,9 @@ func (c *ADClient) GetPrincipal(ctx context.Context, distinguishedName string) (
 }
 
 func (c *ADClient) ResolvePrincipal(ctx context.Context, identifier string) (*models.ADPrincipal, error) {
-	_ = ctx
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
 
 	trimmedIdentifier := strings.TrimSpace(identifier)
 	if trimmedIdentifier == "" {
@@ -245,7 +263,7 @@ func (c *ADClient) ResolvePrincipal(ctx context.Context, identifier string) (*mo
 		nil,
 	)
 
-	sr, err := c.conn.Search(searchRequest)
+	sr, err := c.searchWithContext(ctx, searchRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +296,7 @@ func (c *ADClient) ListTreeNodes(ctx context.Context, parentDN string, limit int
 		limit = 120
 	}
 
-	parentEntry, err := c.lookupEntryByDN(baseDN, []string{"dn", "objectClass", "member"})
+	parentEntry, err := c.lookupEntryByDN(ctx, baseDN, []string{"dn", "objectClass", "member"})
 	if err != nil {
 		return TreeListing{}, err
 	}
@@ -724,7 +742,11 @@ func formatDomainLabel(distinguishedName string) string {
 	return strings.Join(segments, ".")
 }
 
-func (c *ADClient) lookupEntryByDN(distinguishedName string, attributes []string) (*ldap.Entry, error) {
+func (c *ADClient) lookupEntryByDN(ctx context.Context, distinguishedName string, attributes []string) (*ldap.Entry, error) {
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
+
 	escapedDN := ldap.EscapeFilter(strings.TrimSpace(distinguishedName))
 	searchRequest := ldap.NewSearchRequest(
 		c.baseDN,
@@ -734,7 +756,7 @@ func (c *ADClient) lookupEntryByDN(distinguishedName string, attributes []string
 		nil,
 	)
 
-	sr, err := c.conn.Search(searchRequest)
+	sr, err := c.searchWithContext(ctx, searchRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -744,6 +766,49 @@ func (c *ADClient) lookupEntryByDN(distinguishedName string, attributes []string
 	}
 
 	return sr.Entries[0], nil
+}
+
+func (c *ADClient) searchWithContext(ctx context.Context, searchRequest *ldap.SearchRequest) (*ldap.SearchResult, error) {
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// go-ldap v3.4.6 exposes context only on SearchAsync. It checks cancellation
+	// between responses; an in-flight socket read still has the connection's
+	// five-second timeout as its upper bound.
+	response := c.conn.SearchAsync(ctx, searchRequest, 1)
+	result := &ldap.SearchResult{
+		Entries:   make([]*ldap.Entry, 0),
+		Referrals: make([]string, 0),
+		Controls:  make([]ldap.Control, 0),
+	}
+	for response.Next() {
+		if entry := response.Entry(); entry != nil {
+			result.Entries = append(result.Entries, entry)
+		}
+		if referral := response.Referral(); referral != "" {
+			result.Referrals = append(result.Referrals, referral)
+		}
+		result.Controls = append(result.Controls, response.Controls()...)
+	}
+	if err := contextError(ctx); err != nil {
+		return result, err
+	}
+	if err := response.Err(); err != nil {
+		return result, err
+	}
+
+	return result, nil
+}
+
+func contextError(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Err()
 }
 
 func firstNonEmpty(values ...string) string {

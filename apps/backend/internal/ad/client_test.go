@@ -171,6 +171,43 @@ func TestClientConnectReturnsError(t *testing.T) {
 	assert.Nil(t, client.client)
 }
 
+func TestADClientContextAwareLookupsStopBeforeNetworkIOWhenCanceled(t *testing.T) {
+	tests := map[string]func(context.Context, *ADClient) error{
+		"group with members": func(ctx context.Context, client *ADClient) error {
+			group, err := client.GetGroup(ctx, "CN=Large Group,OU=Groups,DC=example,DC=com")
+			assert.Nil(t, group)
+			return err
+		},
+		"principal": func(ctx context.Context, client *ADClient) error {
+			principal, err := client.GetPrincipal(ctx, "CN=Alice,OU=Users,DC=example,DC=com")
+			assert.Nil(t, principal)
+			return err
+		},
+		"principal identifier": func(ctx context.Context, client *ADClient) error {
+			principal, err := client.ResolvePrincipal(ctx, "alice")
+			assert.Nil(t, principal)
+			return err
+		},
+	}
+
+	for name, lookup := range tests {
+		t.Run(name, func(t *testing.T) {
+			server := newLDAPTestServer(t, ldapTestServerOptions{})
+			client, err := NewADClient(server.URL(), "DC=example,DC=com", "svc-reader", "secret")
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			err = lookup(ctx, client)
+
+			assert.ErrorIs(t, err, context.Canceled)
+			assert.Empty(t, server.Filters(), "a canceled group lookup must not traverse any members")
+		})
+	}
+}
+
 func TestADClientHasChildEntriesTreatsSizeLimitAsExpandable(t *testing.T) {
 	server := newLDAPTestServer(t, ldapTestServerOptions{
 		searchResultCode:      ldaplib.LDAPResultSizeLimitExceeded,
