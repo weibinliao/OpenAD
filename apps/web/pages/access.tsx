@@ -11,8 +11,9 @@ import {
 } from 'lucide-react';
 import { apiBase } from '../lib/runtimeApi';
 import { useDict } from '../lib/i18n';
+import { useI18n } from '../contexts/I18nContext';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
-import { Badge, riskTone } from '../components/ui/badge';
+import { Badge, riskLabel, riskTone } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { EmptyState } from '../components/ui/empty-state';
@@ -174,6 +175,7 @@ function WhyCell({ why, d }: { why: Why; d: ReturnType<typeof useDict> }) {
 
 function ByUserTab() {
   const d = useDict();
+  const { locale } = useI18n();
   const router = useRouter();
   const [principal, setPrincipal] = useState('');
   const [result, setResult] = useState<ByUserResult | null>(null);
@@ -308,7 +310,11 @@ function ByUserTab() {
           {/* Entries grouped by root path */}
           {result.by_root_path.length === 0 ? (
             <Card>
-              <EmptyState icon={ShieldQuestion} title={d.common.empty} />
+              <EmptyState
+                icon={ShieldQuestion}
+                title={d.access.noUserEntries}
+                description={d.access.noUserEntriesHint}
+              />
             </Card>
           ) : (
             result.by_root_path.map((groupEntry) => (
@@ -319,7 +325,7 @@ function ByUserTab() {
                 />
                 <CardContent>
                   <TableContainer className="border-0">
-                    <Table>
+                    <Table className="min-w-[860px]">
                       <TableHeader>
                         <TableRow>
                           <TableHead>{d.access.colPath}</TableHead>
@@ -348,7 +354,7 @@ function ByUserTab() {
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              {entry.risk_level ? <Badge tone={riskTone(entry.risk_level)}>{entry.risk_level}</Badge> : '—'}
+                              {entry.risk_level ? <Badge tone={riskTone(entry.risk_level)}>{riskLabel(entry.risk_level, locale)}</Badge> : '—'}
                             </TableCell>
                             <TableCell>
                               <WhyCell why={entry.why} d={d} />
@@ -376,6 +382,7 @@ function ByUserTab() {
 
 function ByResourceTab() {
   const d = useDict();
+  const { locale } = useI18n();
   const router = useRouter();
   const [path, setPath] = useState('');
   const [result, setResult] = useState<ByResourceResult | null>(null);
@@ -475,10 +482,14 @@ function ByResourceTab() {
             <CardHeader title={d.access.principalsTitle} description={result.path_prefix} />
             <CardContent>
               {result.principals.length === 0 ? (
-                <EmptyState icon={ShieldQuestion} title={d.common.empty} />
+                <EmptyState
+                  icon={ShieldQuestion}
+                  title={d.access.noResourceEntries}
+                  description={d.access.noResourceEntriesHint}
+                />
               ) : (
                 <TableContainer className="border-0">
-                  <Table>
+                  <Table className="min-w-[980px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>{d.access.colPrincipal}</TableHead>
@@ -539,7 +550,7 @@ function ByResourceTab() {
                           </TableCell>
                           <TableCell>
                             {principal.risk_level ? (
-                              <Badge tone={riskTone(principal.risk_level)}>{principal.risk_level}</Badge>
+                              <Badge tone={riskTone(principal.risk_level)}>{riskLabel(principal.risk_level, locale)}</Badge>
                             ) : (
                               '—'
                             )}
@@ -557,7 +568,7 @@ function ByResourceTab() {
             <CardHeader title={d.access.acesTitle} description={`${result.counts.aces}`} />
             <CardContent>
               <TableContainer className="border-0">
-                <Table>
+                <Table className="min-w-[900px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>{d.access.colPath}</TableHead>
@@ -593,7 +604,7 @@ function ByResourceTab() {
                         </TableCell>
                         <TableCell>{ace.inherited ? d.common.yes : d.common.no}</TableCell>
                         <TableCell>
-                          {ace.risk_level ? <Badge tone={riskTone(ace.risk_level)}>{ace.risk_level}</Badge> : '—'}
+                          {ace.risk_level ? <Badge tone={riskTone(ace.risk_level)}>{riskLabel(ace.risk_level, locale)}</Badge> : '—'}
                         </TableCell>
                       </TableRow>
                     ))}

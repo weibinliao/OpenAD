@@ -21,7 +21,7 @@ import { useI18n } from '../contexts/I18nContext';
 import { useADConnection } from '../contexts/ADConnectionContext';
 import { cn } from '../lib/cn';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
-import { Badge, riskTone } from '../components/ui/badge';
+import { Badge, riskLabel, riskTone } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Skeleton } from '../components/ui/skeleton';
@@ -92,21 +92,24 @@ export default function ResourcesPage() {
   // ---------------------------------------------------------------- sessions
   const [sessions, setSessions] = useState<ScanSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState('');
   const [selected, setSelected] = useState<ScanSession | null>(null);
 
   const loadSessions = useCallback(async () => {
     setSessionsLoading(true);
+    setSessionsError('');
     try {
       const response = await fetch(`${apiBase()}/api/sessions?status=completed&page=1&page_size=100`);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'unavailable');
       setSessions(Array.isArray(data.items) ? data.items : []);
-    } catch {
+    } catch (requestError) {
       setSessions([]);
+      setSessionsError(requestError instanceof Error ? requestError.message : d.resources.listUnavailable);
     } finally {
       setSessionsLoading(false);
     }
-  }, []);
+  }, [d.resources.listUnavailable]);
 
   useEffect(() => {
     loadSessions();
@@ -282,6 +285,7 @@ export default function ResourcesPage() {
               <Users className="h-3.5 w-3.5 text-fg-muted" />
               <span className="text-fg-secondary">{d.resources.resolveAd}</span>
             </label>
+            {!activeProfile ? <span className="text-warning">{d.resources.connectAdHint}</span> : null}
           </div>
 
           {/* Progress / result strip */}
@@ -342,9 +346,26 @@ export default function ResourcesPage() {
             <Skeleton className="h-32" />
             <Skeleton className="h-32" />
           </div>
+        ) : sessionsError ? (
+          <Card>
+            <EmptyState
+              icon={AlertTriangle}
+              title={d.resources.listUnavailable}
+              description={`${d.resources.listUnavailableHint} ${sessionsError}`}
+              action={
+                <Button aria-label={d.resources.retryResources} size="sm" onClick={() => void loadSessions()}>
+                  <RefreshCcw className="h-3.5 w-3.5" /> {d.common.retry}
+                </Button>
+              }
+            />
+          </Card>
         ) : roots.length === 0 ? (
           <Card>
-            <EmptyState icon={FolderTree} title={d.resources.noShares} />
+            <EmptyState
+              icon={FolderTree}
+              title={d.resources.noShares}
+              action={<Button size="sm" onClick={() => inputRef.current?.focus()}>{d.resources.newScan}</Button>}
+            />
           </Card>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -448,8 +469,10 @@ interface PermissionRow extends PermissionDetailItem {
 
 function PermissionBrowser({ session }: { session: ScanSession }) {
   const d = useDict();
+  const { locale } = useI18n();
   const [rows, setRows] = useState<PermissionRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [trusteeFilter, setTrusteeFilter] = useState('');
   const [pathFilter, setPathFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -458,6 +481,7 @@ function PermissionBrowser({ session }: { session: ScanSession }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const params = new URLSearchParams({ page: String(page), page_size: '50' });
       if (trusteeFilter.trim()) params.set('trustee', trusteeFilter.trim());
@@ -467,13 +491,14 @@ function PermissionBrowser({ session }: { session: ScanSession }) {
       if (!response.ok) throw new Error(data.error || 'unavailable');
       setRows(Array.isArray(data.items) ? data.items : []);
       setTotalPages(data.pagination?.total_pages || 1);
-    } catch {
+    } catch (requestError) {
       setRows([]);
       setTotalPages(1);
+      setLoadError(requestError instanceof Error ? requestError.message : d.resources.permissionsUnavailable);
     } finally {
       setLoading(false);
     }
-  }, [page, pathFilter, session.id, trusteeFilter]);
+  }, [d.resources.permissionsUnavailable, page, pathFilter, session.id, trusteeFilter]);
 
   useEffect(() => {
     load();
@@ -513,12 +538,27 @@ function PermissionBrowser({ session }: { session: ScanSession }) {
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-full" />
           </div>
+        ) : loadError ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title={d.resources.permissionsUnavailable}
+            description={`${d.resources.permissionsUnavailableHint} ${loadError}`}
+            action={
+              <Button aria-label={d.resources.retryPermissions} size="sm" onClick={() => void load()}>
+                <RefreshCcw className="h-3.5 w-3.5" /> {d.common.retry}
+              </Button>
+            }
+          />
         ) : rows.length === 0 ? (
-          <EmptyState icon={FolderSearch} title={d.common.empty} />
+          <EmptyState
+            icon={FolderSearch}
+            title={d.resources.noPermissions}
+            description={d.resources.noPermissionsHint}
+          />
         ) : (
           <>
             <TableContainer className="max-h-[480px] border-0">
-              <Table>
+              <Table className="min-w-[860px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>{d.resources.colTrustee}</TableHead>
@@ -548,11 +588,13 @@ function PermissionBrowser({ session }: { session: ScanSession }) {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <Badge tone={row.type?.toLowerCase() === 'deny' ? 'danger' : 'success'}>{row.type}</Badge>
+                        <Badge tone={row.type?.toLowerCase() === 'deny' ? 'danger' : 'success'}>
+                          {row.type?.toLowerCase() === 'deny' ? d.access.deny : d.access.allow}
+                        </Badge>
                       </TableCell>
                       <TableCell>{row.inherited ? d.common.yes : d.common.no}</TableCell>
                       <TableCell>
-                        {row.risk_level ? <Badge tone={riskTone(row.risk_level)}>{row.risk_level}</Badge> : '—'}
+                        {row.risk_level ? <Badge tone={riskTone(row.risk_level)}>{riskLabel(row.risk_level, locale)}</Badge> : '—'}
                       </TableCell>
                       <TableCell className="max-w-[260px]">
                         <span className="block truncate font-mono text-2xs text-fg-muted" title={row.path}>

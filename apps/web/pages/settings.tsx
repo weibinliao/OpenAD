@@ -481,7 +481,7 @@ export default function SettingsPage() {
               ) : null
             ) : (
               <TableContainer>
-                <Table>
+                <Table className="min-w-[920px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>{d.settings.colName}</TableHead>

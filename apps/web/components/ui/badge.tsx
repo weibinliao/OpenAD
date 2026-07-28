@@ -66,3 +66,28 @@ export function riskTone(riskLevel: string | undefined | null): BadgeTone {
       return 'neutral';
   }
 }
+
+export function riskLabel(riskLevel: string | undefined | null, locale: string) {
+  const normalized = (riskLevel || '').toLowerCase();
+  const labels: Record<string, [string, string]> = {
+    critical: ['Critical', '严重'],
+    high: ['High', '高'],
+    medium: ['Medium', '中'],
+    low: ['Low', '低'],
+  };
+  const label = labels[normalized];
+  return label ? label[locale === 'zh-CN' ? 1 : 0] : riskLevel || '-';
+}
+
+export function scanStatusLabel(status: string | undefined | null, locale: string) {
+  const normalized = (status || '').toLowerCase();
+  const labels: Record<string, [string, string]> = {
+    queued: ['Queued', '排队中'],
+    running: ['Running', '运行中'],
+    completed: ['Completed', '已完成'],
+    failed: ['Failed', '失败'],
+    cancelled: ['Cancelled', '已取消'],
+  };
+  const label = labels[normalized];
+  return label ? label[locale === 'zh-CN' ? 1 : 0] : status || '-';
+}

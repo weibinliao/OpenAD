@@ -165,7 +165,7 @@ export default function ReportCenterWorkspace() {
   const [defaults, setDefaults] = useState<ReportDefaults>(initialDefaults);
   const [previewMarkdown, setPreviewMarkdown] = useState('');
   const [message, setMessage] = useState('');
-  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
   const [datasetLoading, setDatasetLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [exporting, setExporting] = useState<ExportFormat | ''>('');

@@ -12,7 +12,7 @@ import { Badge, type BadgeTone } from '../components/ui/badge';
 import { Input, NativeSelect } from '../components/ui/input';
 import { Skeleton } from '../components/ui/skeleton';
 import { EmptyState } from '../components/ui/empty-state';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow } from '../components/ui/table';
 
 interface FileActivityEvent {
   event_id: number;
@@ -204,11 +204,11 @@ export default function FileActivityPage() {
   const [actionFilter, setActionFilter] = useState('');
   const [hours, setHours] = useState(24);
   const [limit, setLimit] = useState(100);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [readiness, setReadiness] = useState<FileActivityReadiness | null>(null);
   const [readinessPath, setReadinessPath] = useState('');
-  const [readinessLoading, setReadinessLoading] = useState(false);
+  const [readinessLoading, setReadinessLoading] = useState(true);
   const [readinessError, setReadinessError] = useState('');
   const [copiedCommand, setCopiedCommand] = useState('');
 
@@ -326,7 +326,7 @@ export default function FileActivityPage() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={() => void router.push('/ad-workspace')}>
+            <Button variant="secondary" size="sm" onClick={() => void router.push('/settings')}>
               {text(locale, 'Connect AD', '连接 AD')}
             </Button>
             <Button size="sm" onClick={() => void fetchActivity()} disabled={loading}>
@@ -367,7 +367,17 @@ export default function FileActivityPage() {
               </div>
             ) : null}
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
+            {readinessLoading && !readiness ? (
+              <div
+                role="status"
+                aria-label={text(locale, 'Checking file activity prerequisites', '正在检查文件活动前置条件')}
+                className="grid gap-3 md:grid-cols-2"
+              >
+                <Skeleton className="h-40 w-full" />
+                <Skeleton className="h-40 w-full" />
+              </div>
+            ) : (
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
               {/* Current readiness */}
               <div className="overflow-hidden rounded-lg border border-line">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface-raised px-4 py-2.5">
@@ -418,7 +428,8 @@ export default function FileActivityPage() {
                   ))}
                 </div>
               </div>
-            </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -526,12 +537,12 @@ export default function FileActivityPage() {
                   <div>
                     <p className="font-medium">{text(locale, 'AD name resolution is not active', 'AD 名称解析未启用')}</p>
                     <p className="mt-0.5 text-xs">
-                      {text(locale, 'File events may contain SIDs until AD is connected in the current browser session. Open AD Workspace, test the connection, then return here and refresh.', '在当前浏览器会话未连接 AD 前，文件事件可能显示 SID。请打开 AD 工作区完成连接测试，然后回到这里刷新。')}
+                      {text(locale, 'File events may contain SIDs until AD is connected in the current browser session. Open System Settings, test the connection, then return here and refresh.', '在当前浏览器会话未连接 AD 前，文件事件可能显示 SID。请打开系统设置完成连接测试，然后回到这里刷新。')}
                     </p>
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => void router.push('/ad-workspace')}>
-                  {text(locale, 'Open AD Workspace', '打开 AD 工作区')}
+                <Button variant="outline" size="sm" onClick={() => void router.push('/settings')}>
+                  {text(locale, 'Open System Settings', '打开系统设置')}
                 </Button>
               </div>
             </div>
@@ -551,7 +562,7 @@ export default function FileActivityPage() {
               description={text(locale, 'If this should show activity, confirm the audit policy, SACL, time window, and Security log permissions.', '如果这里应该出现访问行为，请确认审计策略、SACL、时间窗口和 Security 日志读取权限。')}
             />
           ) : (
-            <div className="overflow-x-auto">
+            <TableContainer className="max-h-[56vh] rounded-none border-x-0 border-b-0">
               <Table className="min-w-[1180px]">
                 <TableHeader>
                   <TableRow>
@@ -575,10 +586,10 @@ export default function FileActivityPage() {
                             {actionLabel(item.action, locale)}
                           </Badge>
                         </TableCell>
-                        <TableCell>
-                          <div className="font-mono text-2xs font-medium text-fg">{item.user || '-'}</div>
+                        <TableCell className="max-w-[260px]">
+                          <div className="truncate font-mono text-2xs font-medium text-fg" title={item.user || '-'}>{item.user || '-'}</div>
                           {item.user_sid && item.user_sid !== item.user ? (
-                            <div className="mt-0.5 font-mono text-2xs text-fg-muted">SID: {item.user_sid}</div>
+                            <div className="mt-0.5 truncate font-mono text-2xs text-fg-muted" title={item.user_sid}>SID: {item.user_sid}</div>
                           ) : null}
                           {item.resolution ? (
                             <div className="mt-0.5 text-2xs text-fg-muted">
@@ -608,7 +619,7 @@ export default function FileActivityPage() {
                   })}
                 </TableBody>
               </Table>
-            </div>
+            </TableContainer>
           )}
         </Card>
       </div>

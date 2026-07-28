@@ -11,7 +11,7 @@ import { Badge, type BadgeTone } from '../components/ui/badge';
 import { Input, NativeSelect } from '../components/ui/input';
 import { Skeleton } from '../components/ui/skeleton';
 import { EmptyState } from '../components/ui/empty-state';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow } from '../components/ui/table';
 
 interface AuditItem {
   request_id: string;
@@ -62,7 +62,7 @@ export default function AuditPage() {
   const [items, setItems] = useState<AuditItem[]>([]);
   const [pagination, setPagination] = useState<AuditPagination>({ page: 1, page_size: 50, total: 0, total_pages: 1 });
   const [pageSize, setPageSize] = useState(50);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [methodFilter, setMethodFilter] = useState('');
@@ -209,7 +209,7 @@ export default function AuditPage() {
             <Input
               value={pathFilter}
               onChange={(event) => setPathFilter(event.target.value)}
-              placeholder="path contains..."
+              placeholder={text(locale, 'Path contains...', '路径包含...')}
               className="w-56 flex-1 sm:flex-none"
             />
             <Input
@@ -267,7 +267,7 @@ export default function AuditPage() {
               }
             />
           ) : (
-            <div className="overflow-x-auto">
+            <TableContainer className="max-h-[56vh] rounded-none border-x-0 border-b-0">
               <Table className="min-w-[980px]">
                 <TableHeader>
                   <TableRow>
@@ -306,7 +306,7 @@ export default function AuditPage() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
+            </TableContainer>
           )}
 
           {/* Pagination */}

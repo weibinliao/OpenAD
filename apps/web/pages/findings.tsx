@@ -290,7 +290,7 @@ export default function FindingsPage() {
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0 space-y-2">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <Badge tone={riskTone(finding.severity)} className="capitalize">{finding.severity}</Badge>
+                          <Badge tone={riskTone(finding.severity)}>{severityLabel(finding.severity, locale)}</Badge>
                           <Badge tone="neutral">{statusLabel(finding.status, locale)}</Badge>
                           <Badge tone="info">{text(locale, 'Score', '评分')} {finding.priorityScore || '-'}</Badge>
                           <Badge tone="neutral">{categoryLabel(finding.category, locale)}</Badge>

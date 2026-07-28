@@ -115,6 +115,24 @@ describe('AppShellV2 desktop workspace', () => {
     expect(container.querySelector('.pp-command-island')).not.toBeNull();
   });
 
+  it('applies the saved table density to the entire workspace', () => {
+    const { container, rerender } = render(
+      <AppShellV2 workspaceSettings={{ ...defaultWorkspaceSettings, compactTables: true }}>
+        <div>Dashboard content</div>
+      </AppShellV2>,
+    );
+
+    expect(container.querySelector('.pp-workspace-content')).toHaveClass('is-compact-tables');
+
+    rerender(
+      <AppShellV2 workspaceSettings={{ ...defaultWorkspaceSettings, compactTables: false }}>
+        <div>Dashboard content</div>
+      </AppShellV2>,
+    );
+
+    expect(container.querySelector('.pp-workspace-content')).not.toHaveClass('is-compact-tables');
+  });
+
   it('keeps product identity in the window title without reserving a redundant sidebar header', () => {
     const { container } = render(
       <AppShellV2>

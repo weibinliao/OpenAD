@@ -83,7 +83,8 @@ export default function AppShellV2({
 
   const isChinese = locale === 'zh-CN';
   const copy = (en: string, zh: string) => (isChinese ? zh : en);
-  const branding = resolveWorkspaceBranding(workspaceSettings || defaultWorkspaceSettings, t('appTitle'));
+  const effectiveWorkspaceSettings = workspaceSettings || defaultWorkspaceSettings;
+  const branding = resolveWorkspaceBranding(effectiveWorkspaceSettings, t('appTitle'));
   const productName = 'OpenAD';
   const titleBrand = branding.workspaceLabel === defaultWorkspaceSettings.workspaceLabel
     || branding.workspaceLabel === productName
@@ -584,7 +585,15 @@ export default function AppShellV2({
               </div>
             </header>
 
-            <main ref={workspaceContentRef} className="pp-workspace-content">{children}</main>
+            <main
+              ref={workspaceContentRef}
+              className={cn(
+                'pp-workspace-content',
+                effectiveWorkspaceSettings.compactTables && 'is-compact-tables',
+              )}
+            >
+              {children}
+            </main>
           </div>
         </div>
       </DesktopWindowFrame>
