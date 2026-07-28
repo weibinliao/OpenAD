@@ -1,5 +1,10 @@
 * text=auto
 
+# 许可与归属文件必须逐字保留上游换行，便于校验哈希与 GNU 官方文本一致。
+LICENSE text eol=lf
+NOTICE text eol=lf
+ee/LICENSE text eol=lf
+
 *.go text eol=lf
 *.js text eol=lf
 *.mjs text eol=lf
