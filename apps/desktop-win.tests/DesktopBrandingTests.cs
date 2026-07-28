@@ -50,10 +50,15 @@ public sealed class DesktopBrandingTests
     {
         var projectDirectory = FindProjectDirectory();
         var startupControlPath = Path.Combine(projectDirectory, "StartupExperienceControl.cs");
-        var source = File.ReadAllText(startupControlPath);
+        var startupStringsPath = Path.Combine(projectDirectory, "StartupExperienceStrings.cs");
+        var source = File.ReadAllText(startupControlPath) + File.ReadAllText(startupStringsPath);
+        var english = StartupExperienceStrings.For(StartupExperienceLocale.English);
+        var chinese = StartupExperienceStrings.For(StartupExperienceLocale.SimplifiedChinese);
 
-        Assert.Contains("\"LOCAL RUNTIME\"", source, StringComparison.Ordinal);
+        Assert.Equal("LOCAL RUNTIME", english.LocalRuntime);
+        Assert.Equal("本地运行时", chinese.LocalRuntime);
         Assert.DoesNotContain("RuntimeProjectName", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"PermissionProtector", source, StringComparison.Ordinal);
     }
 
     [Fact]
