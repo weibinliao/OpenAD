@@ -9,20 +9,21 @@ if not exist "%PROJECT_ROOT%\permission-protector-server.exe" set "PROJECT_ROOT=
 for %%I in ("%PROJECT_ROOT%") do set "PROJECT_ROOT=%%~fI"
 
 set "START_BACKGROUND_SCRIPT=%PROJECT_ROOT%\scripts\start-background.ps1"
-if "%API_HOST%"=="" set "API_HOST=0.0.0.0"
+if "%API_HOST%"=="" set "API_HOST=127.0.0.1"
 if "%API_PORT%"=="" set "API_PORT=18080"
 if "%PORT%"=="" set "PORT=%API_PORT%"
 if "%GIN_MODE%"=="" set "GIN_MODE=release"
 if "%WEB_PORT%"=="" set "WEB_PORT=3010"
 if "%WEB_HOST%"=="" if not "%PP_WEB_HOST%"=="" set "WEB_HOST=%PP_WEB_HOST%"
-if "%WEB_HOST%"=="" set "WEB_HOST=0.0.0.0"
-if "%PUBLIC_HOST%"=="" (
+if "%WEB_HOST%"=="" set "WEB_HOST=127.0.0.1"
+if "%PUBLIC_HOST%"=="" set "PUBLIC_HOST=localhost"
+set "LAN_WEB_BIND=0"
+if /I "%WEB_HOST%"=="+" set "LAN_WEB_BIND=1"
+if /I "%WEB_HOST%"=="*" set "LAN_WEB_BIND=1"
+if /I "%WEB_HOST%"=="0.0.0.0" set "LAN_WEB_BIND=1"
+if "%LAN_WEB_BIND%"=="1" if /I "%PUBLIC_HOST%"=="localhost" (
     for /f "usebackq delims=" %%H in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$primary = Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.IPv4DefaultGateway -and $_.IPv4Address } | Sort-Object InterfaceMetric | Select-Object -First 1; if ($primary) { $primary.IPv4Address[0].IPAddress } else { $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.254*' -and $_.PrefixOrigin -ne 'WellKnown' } | Sort-Object InterfaceMetric | Select-Object -First 1 -ExpandProperty IPAddress; if ($ip) { $ip } else { 'localhost' } }"`) do set "PUBLIC_HOST=%%H"
 )
-if "%PUBLIC_HOST%"=="" set "PUBLIC_HOST=localhost"
-if /I "%WEB_HOST%"=="+" if "%PUBLIC_HOST%"=="localhost" set "PUBLIC_HOST=%COMPUTERNAME%"
-if /I "%WEB_HOST%"=="*" if "%PUBLIC_HOST%"=="localhost" set "PUBLIC_HOST=%COMPUTERNAME%"
-if /I "%WEB_HOST%"=="0.0.0.0" if "%PUBLIC_HOST%"=="localhost" set "PUBLIC_HOST=%COMPUTERNAME%"
 if "%PERMISSION_PROTECTOR_DATA_DIR%"=="" set "PERMISSION_PROTECTOR_DATA_DIR=%APPDATA%\PermissionProtector"
 if not exist "%PERMISSION_PROTECTOR_DATA_DIR%" mkdir "%PERMISSION_PROTECTOR_DATA_DIR%"
 if "%DATABASE_URL%"=="" set "DATABASE_URL=sqlite:///%PERMISSION_PROTECTOR_DATA_DIR%\permission-protector.db"

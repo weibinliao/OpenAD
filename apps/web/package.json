@@ -2,7 +2,7 @@
   "name": "openad-web",
   "version": "0.1.0",
   "scripts": {
-    "dev": "next dev --hostname 0.0.0.0 --port 3010",
+    "dev": "next dev --hostname 127.0.0.1 --port 3010",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "npm run typecheck",
     "test": "jest --runInBand",

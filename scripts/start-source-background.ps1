@@ -1,9 +1,9 @@
 param(
     [string]$ProjectRoot,
     [string]$DataDir,
-    [string]$ApiHost = '0.0.0.0',
+    [string]$ApiHost = '127.0.0.1',
     [int]$ApiPort = 18080,
-    [string]$WebHost = '0.0.0.0',
+    [string]$WebHost = '127.0.0.1',
     [int]$WebPort = 3010,
     [string]$PublicHost = '',
     [string]$NetworkAcl = $env:NETWORK_ACL,
@@ -222,12 +222,19 @@ if ($WebMode -ne 'production' -and $WebMode -ne 'dev') {
     throw "Unsupported WebMode: $WebMode. Use production or dev."
 }
 
+$allInterfaceHosts = @('0.0.0.0', '*', '+')
+$lanWebBinding = $allInterfaceHosts -contains $WebHost.Trim()
+$lanBinding = $lanWebBinding -or $allInterfaceHosts -contains $ApiHost.Trim()
 if ([string]::IsNullOrWhiteSpace($PublicHost)) {
-    $PublicHost = Get-DefaultPublicHost
+    $PublicHost = if ($lanWebBinding) { Get-DefaultPublicHost } else { 'localhost' }
 }
 
 if ([string]::IsNullOrWhiteSpace($PublicHost)) {
     $PublicHost = 'localhost'
+}
+
+if ($lanBinding) {
+    Write-Warning 'OpenAD is listening on all network interfaces without product login or RBAC. Use only on a trusted administration network.'
 }
 
 foreach ($proxyName in @('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'GIT_HTTP_PROXY', 'GIT_HTTPS_PROXY')) {

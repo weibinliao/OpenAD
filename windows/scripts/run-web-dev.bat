@@ -16,7 +16,7 @@ if "%WEB_APP_DIR%"=="" exit /b 1
 if "%NPM_CMD%"=="" exit /b 1
 if "%API_PORT%"=="" exit /b 1
 if "%WEB_PORT%"=="" set "WEB_PORT=3010"
-if "%WEB_HOST%"=="" set "WEB_HOST=0.0.0.0"
+if "%WEB_HOST%"=="" set "WEB_HOST=127.0.0.1"
 if "%PUBLIC_HOST%"=="" set "PUBLIC_HOST=localhost"
 if not exist "%PORT_HELPER%" (
     echo ERROR: port helper script not found: %PORT_HELPER%

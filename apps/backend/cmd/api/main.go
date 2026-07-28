@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	db "github.com/weibinliao/OpenAD/internal/database"
 	"github.com/gin-gonic/gin"
+	db "github.com/weibinliao/OpenAD/internal/database"
 )
 
 func main() {
@@ -26,6 +26,9 @@ func main() {
 	address := resolveServerAddress()
 
 	log.Printf("Server starting on %s", address)
+	if strings.HasPrefix(address, "0.0.0.0:") || strings.HasPrefix(address, "[::]:") {
+		log.Printf("SECURITY WARNING: API is listening on all network interfaces without product login or RBAC; use only on a trusted administration network")
+	}
 	if err := router.Run(address); err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}
@@ -36,8 +39,11 @@ func resolveServerAddress() string {
 	if host == "" {
 		host = strings.TrimSpace(os.Getenv("BIND_HOST"))
 	}
-	if host == "*" {
+	if host == "*" || host == "+" {
 		host = "0.0.0.0"
+	}
+	if host == "" {
+		host = "127.0.0.1"
 	}
 
 	for _, key := range []string{"API_PORT", "PORT"} {
@@ -189,14 +195,14 @@ func handleRuntimeIdentity(context *gin.Context) {
 	}
 
 	context.JSON(http.StatusOK, gin.H{
-		"account_name": accountName,
-		"username":     username,
-		"domain":       domain,
-		"host":         hostname,
-		"preferred_host": preferredHost,
+		"account_name":         accountName,
+		"username":             username,
+		"domain":               domain,
+		"host":                 hostname,
+		"preferred_host":       preferredHost,
 		"local_ipv4_addresses": localIPv4Addresses,
-		"goos":         runtime.GOOS,
-		"note":         "UNC browsing and scanning use this backend runtime identity; AD credentials are only used for directory expansion and principal resolution",
+		"goos":                 runtime.GOOS,
+		"note":                 "UNC browsing and scanning use this backend runtime identity; AD credentials are only used for directory expansion and principal resolution",
 	})
 }
 

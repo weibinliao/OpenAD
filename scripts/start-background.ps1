@@ -1,16 +1,22 @@
 param(
     [Parameter(Mandatory = $true)][string]$ProjectRoot,
     [Parameter(Mandatory = $true)][string]$DataDir,
-    [string]$ApiHost = '0.0.0.0',
+    [string]$ApiHost = '127.0.0.1',
     [int]$ApiPort = 18080,
     [string]$GinMode = 'release',
     [Parameter(Mandatory = $true)][string]$DatabaseUrl,
-    [string]$WebHost = 'localhost',
+    [string]$WebHost = '127.0.0.1',
     [int]$WebPort = 3010,
     [string]$PublicHost = 'localhost'
 )
 
 $ErrorActionPreference = 'Stop'
+
+$allInterfaceHosts = @('0.0.0.0', '*', '+')
+$lanBinding = $allInterfaceHosts -contains $ApiHost.Trim() -or $allInterfaceHosts -contains $WebHost.Trim()
+if ($lanBinding) {
+    Write-Warning 'OpenAD is listening on all network interfaces without product login or RBAC. Use only on a trusted administration network.'
+}
 
 function Assert-File([string]$Path, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {

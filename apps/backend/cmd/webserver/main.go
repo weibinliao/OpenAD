@@ -14,7 +14,7 @@ import (
 
 func main() {
 	root := flag.String("root", "web", "directory containing exported web files")
-	host := flag.String("host", "localhost", "host or interface to bind")
+	host := flag.String("host", "127.0.0.1", "host or interface to bind")
 	port := flag.Int("port", 3010, "port to listen on")
 	flag.Parse()
 
@@ -28,7 +28,10 @@ func main() {
 
 	bindHost := normalizeHost(*host)
 	addr := net.JoinHostPort(bindHost, strconv.Itoa(*port))
-	log.Printf("Static web server listening at http://%s:%d", displayHost(*host), *port)
+	log.Printf("Static web server listening at http://%s", addr)
+	if bindHost == "0.0.0.0" || bindHost == "::" {
+		log.Printf("SECURITY WARNING: Web UI is listening on all network interfaces without product login or RBAC; use only on a trusted administration network")
+	}
 	log.Printf("Serving files from: %s", rootAbs)
 
 	server := &http.Server{
@@ -40,18 +43,13 @@ func main() {
 
 func normalizeHost(host string) string {
 	switch strings.TrimSpace(strings.ToLower(host)) {
-	case "", "+", "*", "0.0.0.0":
+	case "":
+		return "127.0.0.1"
+	case "+", "*", "0.0.0.0":
 		return "0.0.0.0"
 	default:
 		return strings.TrimSpace(host)
 	}
-}
-
-func displayHost(host string) string {
-	if strings.TrimSpace(host) == "" {
-		return "localhost"
-	}
-	return strings.TrimSpace(host)
 }
 
 func staticHandler(root string) http.Handler {

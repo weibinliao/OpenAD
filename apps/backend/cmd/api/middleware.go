@@ -561,8 +561,16 @@ func auditLogMiddleware() gin.HandlerFunc {
 }
 
 func parseAllowedOrigins(value string) []string {
+	localOrigins := []string{
+		"http://localhost:3010",
+		"http://127.0.0.1:3010",
+		"http://[::1]:3010",
+		"http://localhost:43110",
+		"http://127.0.0.1:43110",
+		"http://[::1]:43110",
+	}
 	if strings.TrimSpace(value) == "" {
-		return []string{"*"}
+		return localOrigins
 	}
 
 	rawItems := strings.Split(value, ",")
@@ -574,7 +582,7 @@ func parseAllowedOrigins(value string) []string {
 		}
 	}
 	if len(items) == 0 {
-		return []string{"*"}
+		return localOrigins
 	}
 
 	return items

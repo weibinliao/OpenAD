@@ -17,8 +17,8 @@ set "GOCACHE=%PROJECT_ROOT%\.gocache"
 set "GOMODCACHE=%PROJECT_ROOT%\.gomodcache"
 set "GOPROXY=https://goproxy.cn,direct"
 set "GOSUMDB=sum.golang.google.cn"
-set "API_HOST=0.0.0.0"
-set "WEB_HOST=0.0.0.0"
+if "%API_HOST%"=="" set "API_HOST=127.0.0.1"
+if "%WEB_HOST%"=="" set "WEB_HOST=127.0.0.1"
 if "%NETWORK_ACL%"=="" set "NETWORK_ACL=loopback,private"
 
 rem Clear known broken local proxy placeholders that block dependency downloads.
@@ -122,7 +122,17 @@ if "%PERMISSION_PROTECTOR_DATA_DIR%"=="" set "PERMISSION_PROTECTOR_DATA_DIR=%APP
 if not exist "%PERMISSION_PROTECTOR_DATA_DIR%" mkdir "%PERMISSION_PROTECTOR_DATA_DIR%"
 if "%DATABASE_URL%"=="" set "DATABASE_URL=sqlite:///%PERMISSION_PROTECTOR_DATA_DIR%\permission-protector-dev.db"
 
-if "%PUBLIC_HOST%"=="" (
+if "%PUBLIC_HOST%"=="" set "PUBLIC_HOST=localhost"
+set "LAN_WEB_BIND=0"
+set "LAN_BIND=0"
+if /I "%WEB_HOST%"=="+" set "LAN_WEB_BIND=1"
+if /I "%WEB_HOST%"=="*" set "LAN_WEB_BIND=1"
+if /I "%WEB_HOST%"=="0.0.0.0" set "LAN_WEB_BIND=1"
+if /I "%API_HOST%"=="+" set "LAN_BIND=1"
+if /I "%API_HOST%"=="*" set "LAN_BIND=1"
+if /I "%API_HOST%"=="0.0.0.0" set "LAN_BIND=1"
+if "%LAN_WEB_BIND%"=="1" set "LAN_BIND=1"
+if "%LAN_WEB_BIND%"=="1" if /I "%PUBLIC_HOST%"=="localhost" (
     for /f "usebackq delims=" %%H in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$primary = Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.IPv4DefaultGateway -and $_.IPv4Address } | Sort-Object InterfaceMetric | Select-Object -First 1; if ($primary) { $primary.IPv4Address[0].IPAddress } else { $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.254*' -and $_.PrefixOrigin -ne 'WellKnown' } | Sort-Object InterfaceMetric | Select-Object -First 1 -ExpandProperty IPAddress; if ($ip) { $ip } else { 'localhost' } }"`) do set "PUBLIC_HOST=%%H"
 )
 
@@ -182,10 +192,12 @@ if errorlevel 1 (
 
 echo API port: %API_PORT%
 echo Web port: %WEB_PORT%
-echo Bind host: %WEB_HOST%
+echo API bind host: %API_HOST%
+echo Web bind host: %WEB_HOST%
 echo Public URL host: %PUBLIC_HOST%
 echo Network ACL: %NETWORK_ACL%
 echo Data directory: %PERMISSION_PROTECTOR_DATA_DIR%
+if "%LAN_BIND%"=="1" echo SECURITY WARNING: OpenAD is listening on all network interfaces without product login or RBAC. Use only on a trusted administration network.
 echo.
 
 start "PermissionProtector API" cmd /k "cd /d ""%API_APP_DIR%"" && set ""GOCACHE=%GOCACHE%"" && set ""GOMODCACHE=%GOMODCACHE%"" && set ""GOPROXY=%GOPROXY%"" && set ""GOSUMDB=%GOSUMDB%"" && set ""API_HOST=%API_HOST%"" && set ""API_PORT=%API_PORT%"" && set ""PORT=%API_PORT%"" && set ""NETWORK_ACL=%NETWORK_ACL%"" && set ""PERMISSION_PROTECTOR_DATA_DIR=%PERMISSION_PROTECTOR_DATA_DIR%"" && set ""DATABASE_URL=%DATABASE_URL%"" && ""%GO_EXE%"" run ./cmd/api"
@@ -223,10 +235,8 @@ start "" "http://localhost:%WEB_PORT%"
 :startup_summary
 echo.
 echo Application windows opened.
-echo - Web UI: http://localhost:%WEB_PORT%
-echo - Web UI on host IP: http://%PUBLIC_HOST%:%WEB_PORT%
-echo - API:    http://localhost:%API_PORT%
-echo - API on host IP:    http://%PUBLIC_HOST%:%API_PORT%
+echo - Web UI: http://%PUBLIC_HOST%:%WEB_PORT% ^(bind: %WEB_HOST%:%WEB_PORT%^)
+echo - API:    http://%PUBLIC_HOST%:%API_PORT% ^(bind: %API_HOST%:%API_PORT%^)
 echo.
 echo Leave the two command windows open while using the app.
 echo Close them when you want to stop the application.
