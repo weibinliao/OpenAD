@@ -2,7 +2,6 @@ package websocket
 
 import (
 	"log"
-	"net/http"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -10,9 +9,7 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins in development
-	},
+	CheckOrigin: CheckOrigin,
 }
 
 type ProgressEvent struct {
