@@ -1,18 +1,56 @@
 import {
   RISK_FINDINGS_KEY,
-  readRiskFindings,
+  loadRiskFindings,
   summarizeRiskFindings,
   upsertRiskFindingsFromScan,
   updateRiskFindingStatus,
+  type RiskFinding,
 } from './riskFindings';
 
-describe('riskFindings exposure integration', () => {
+const legacyFinding: RiskFinding = {
+  id: 'legacy-1',
+  fingerprint: 'broad-access|c:\\finance|everyone|modify',
+  status: 'accepted',
+  severity: 'critical',
+  type: 'broad-access',
+  title: 'Broad access to Finance',
+  suggestedAction: 'Remove broad write access.',
+  path: 'C:\\Finance',
+  trustee: 'Everyone',
+  trusteeSid: 'S-1-1-0',
+  rights: 'Modify',
+  inherited: false,
+  source: 'Explicit',
+  firstSeenAt: '2026-05-08T08:00:00.000Z',
+  lastSeenAt: '2026-05-09T08:00:00.000Z',
+  lastSessionID: 'session-1',
+  seenCount: 2,
+  note: 'Approved exception',
+};
+
+function response(body: unknown, ok = true) {
+  return Promise.resolve({
+    ok,
+    status: ok ? 200 : 500,
+    json: async () => body,
+  } as Response);
+}
+
+describe('riskFindings server persistence', () => {
   beforeEach(() => {
-    window.localStorage.removeItem(RISK_FINDINGS_KEY);
+    window.localStorage.clear();
+    global.fetch = jest.fn();
   });
 
-  test('persists exposure-engine metadata from a scan', () => {
-    const summary = upsertRiskFindingsFromScan({
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('persists scan findings through the API without writing localStorage', async () => {
+    const setItem = jest.spyOn(Storage.prototype, 'setItem');
+    (global.fetch as jest.Mock).mockImplementation(() => response({ count: 1 }));
+
+    await upsertRiskFindingsFromScan({
       sessionID: 'session-1',
       scannedAt: '2026-05-08T08:00:00.000Z',
       permissions: [
@@ -28,58 +66,100 @@ describe('riskFindings exposure integration', () => {
       ],
     });
 
-    const findings = readRiskFindings();
-    expect(summary.exposureScore).toBeGreaterThanOrEqual(90);
-    expect(summary.sensitivePaths).toBe(1);
-    expect(findings[0]).toEqual(
-      expect.objectContaining({
-        category: expect.any(String),
-        priorityScore: expect.any(Number),
-        evidence: expect.any(Array),
-        controlMapping: expect.any(Array),
-        sensitiveLabels: expect.arrayContaining(['Finance']),
-      })
-    );
+    expect(setItem).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/risk-findings/upsert');
+    const payload = JSON.parse(String(options.body));
+    expect(payload.items[0]).toEqual(expect.objectContaining({
+      fingerprint: expect.any(String),
+      trustee_sid: 'S-1-1-0',
+      last_session_id: 'session-1',
+      priority_score: expect.any(Number),
+      evidence: expect.any(Array),
+    }));
   });
 
-  test('keeps accepted findings while incrementing seen count', () => {
-    upsertRiskFindingsFromScan({
-      sessionID: 'session-1',
-      scannedAt: '2026-05-08T08:00:00.000Z',
-      permissions: [
-        {
-          path: 'C:\\Data',
-          trustee: 'Everyone',
-          trustee_sid: 'S-1-1-0',
-          rights: 'Modify',
-          type: 'Allow',
-          inherited: false,
-        },
-      ],
-    });
+  test('migrates legacy localStorage findings once before loading the server copy', async () => {
+    window.localStorage.setItem(RISK_FINDINGS_KEY, JSON.stringify([legacyFinding]));
+    (global.fetch as jest.Mock)
+      .mockImplementationOnce(() => response({ count: 1 }))
+      .mockImplementationOnce(() => response({ items: [{
+        id: 'server-1',
+        fingerprint: legacyFinding.fingerprint,
+        status: 'accepted',
+        severity: 'critical',
+        type: 'broad-access',
+        title: legacyFinding.title,
+        suggested_action: legacyFinding.suggestedAction,
+        path: legacyFinding.path,
+        trustee: legacyFinding.trustee,
+        trustee_sid: legacyFinding.trusteeSid,
+        rights: legacyFinding.rights,
+        inherited: false,
+        source: legacyFinding.source,
+        first_seen_at: legacyFinding.firstSeenAt,
+        last_seen_at: legacyFinding.lastSeenAt,
+        last_session_id: legacyFinding.lastSessionID,
+        seen_count: 2,
+        note: legacyFinding.note,
+      }] }))
+      .mockImplementationOnce(() => response({ items: [] }));
 
-    const [first] = readRiskFindings();
-    updateRiskFindingStatus(first.id, 'accepted');
+    const findings = await loadRiskFindings();
+    expect(findings).toEqual([expect.objectContaining({
+      id: 'server-1',
+      status: 'accepted',
+      trusteeSid: 'S-1-1-0',
+      seenCount: 2,
+    })]);
+    expect(window.localStorage.getItem(RISK_FINDINGS_KEY)).toBeNull();
 
-    upsertRiskFindingsFromScan({
-      sessionID: 'session-2',
-      scannedAt: '2026-05-09T08:00:00.000Z',
-      permissions: [
-        {
-          path: 'C:\\Data',
-          trustee: 'Everyone',
-          trustee_sid: 'S-1-1-0',
-          rights: 'Modify',
-          type: 'Allow',
-          inherited: false,
-        },
-      ],
-    });
+    const [importURL, importOptions] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    expect(importURL).toContain('/api/risk-findings/import');
+    expect(JSON.parse(String(importOptions.body)).items[0]).toEqual(expect.objectContaining({
+      status: 'accepted',
+      seen_count: 2,
+      note: 'Approved exception',
+    }));
 
-    const acceptedFinding = readRiskFindings().find((finding) => finding.id === first.id);
-    const summary = summarizeRiskFindings();
-    expect(acceptedFinding?.status).toBe('accepted');
-    expect(acceptedFinding?.seenCount).toBe(2);
-    expect(summary.accepted).toBeGreaterThanOrEqual(1);
+    await loadRiskFindings();
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  test('updates review state through the API', async () => {
+    (global.fetch as jest.Mock).mockImplementation(() => response({
+      id: 'server-1',
+      fingerprint: legacyFinding.fingerprint,
+      status: 'resolved',
+      severity: 'critical',
+      type: legacyFinding.type,
+      title: legacyFinding.title,
+      suggested_action: legacyFinding.suggestedAction,
+      path: legacyFinding.path,
+      trustee: legacyFinding.trustee,
+      trustee_sid: legacyFinding.trusteeSid,
+      rights: legacyFinding.rights,
+      inherited: false,
+      source: legacyFinding.source,
+      first_seen_at: legacyFinding.firstSeenAt,
+      last_seen_at: legacyFinding.lastSeenAt,
+      seen_count: 2,
+    }));
+
+    const updated = await updateRiskFindingStatus('server-1', 'resolved');
+
+    expect(updated.status).toBe('resolved');
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/risk-findings/server-1');
+    expect(options.method).toBe('PUT');
+    expect(JSON.parse(String(options.body))).toEqual({ status: 'resolved' });
+  });
+
+  test('summarizes server-loaded findings', () => {
+    const summary = summarizeRiskFindings([legacyFinding]);
+    expect(summary.total).toBe(1);
+    expect(summary.accepted).toBe(1);
+    expect(summary.exposureScore).toBe(0);
   });
 });

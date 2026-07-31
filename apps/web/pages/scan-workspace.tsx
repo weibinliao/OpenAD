@@ -443,22 +443,6 @@ export default function ScanWorkspacePage() {
         error: '',
       }));
 
-      const nextRiskCount = nextResults
-        .filter((item) => inferRiskLevel(item.rights, item.risk_level) === 'high')
-        .length;
-      recordWatchedShareScan({
-        id: activeWatchedShareID || undefined,
-        path: requestedPath,
-        sessionID: nextSessionID,
-        itemsScanned: nextItemsScanned,
-        permissionCount: Number(data.permission_count || nextResults.length),
-        highRiskCount: nextRiskCount,
-      });
-      upsertRiskFindingsFromScan({
-        permissions: nextResults,
-        sessionID: nextSessionID,
-      });
-
       return { nextResults, nextSkipped };
     };
 
@@ -494,6 +478,31 @@ export default function ScanWorkspacePage() {
           'AD 展开没有返回记录，本次运行已回退到目录 ACL 数据集。',
         )
         : text(locale, 'Scan completed.', '扫描已完成。'));
+
+      const nextRiskCount = nextResults
+        .filter((item) => inferRiskLevel(item.rights, item.risk_level) === 'high')
+        .length;
+      try {
+        recordWatchedShareScan({
+          id: activeWatchedShareID || undefined,
+          path: requestedPath,
+          sessionID: data.session_id || '',
+          itemsScanned: Number(data.items_scanned || 0),
+          permissionCount: Number(data.permission_count || nextResults.length),
+          highRiskCount: nextRiskCount,
+        });
+      } catch (metadataError) {
+        appendOperationLog(
+          {
+            scope: 'scan',
+            action: 'record-watched-share-failed',
+            message: metadataError instanceof Error ? metadataError.message : 'Watched share metadata could not be saved.',
+            context: { path: requestedPath, sessionID: data.session_id || '' },
+          },
+          workspaceSettings.auditLogging,
+        );
+      }
+
       appendOperationLog(
         {
           scope: 'scan',
@@ -511,6 +520,33 @@ export default function ScanWorkspacePage() {
         },
         workspaceSettings.auditLogging,
       );
+
+      try {
+        await upsertRiskFindingsFromScan({
+          permissions: nextResults,
+          sessionID: data.session_id || '',
+        });
+      } catch (riskPersistenceError) {
+        const detail = riskPersistenceError instanceof Error ? riskPersistenceError.message : 'Risk finding persistence failed.';
+        setMessage(`${text(
+          locale,
+          'Scan completed, but risk findings could not be saved.',
+          '扫描已完成，但风险发现未能保存。',
+        )} ${detail}`);
+        appendOperationLog(
+          {
+            scope: 'scan',
+            action: 'run-scan-risk-sync-failed',
+            message: detail,
+            context: {
+              path: requestedPath,
+              sessionID: data.session_id || '',
+              permissions: nextResults.length,
+            },
+          },
+          workspaceSettings.auditLogging,
+        );
+      }
     } catch (requestError) {
       const nextError = requestError instanceof Error ? requestError.message : 'Scan failed';
       setError(nextError);

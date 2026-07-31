@@ -493,6 +493,8 @@ func endpointProtectionMiddleware() gin.HandlerFunc {
 		"/api/file-activity/events/query":    {},
 		"/api/export/download":               {},
 		"/api/export/summary":                {},
+		"/api/risk-findings/upsert":          {},
+		"/api/risk-findings/import":          {},
 	}
 
 	return func(context *gin.Context) {
