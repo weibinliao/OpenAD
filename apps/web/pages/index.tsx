@@ -24,7 +24,7 @@ import { useI18n } from '../contexts/I18nContext';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import {
   RISK_FINDINGS_UPDATED_EVENT,
-  readRiskFindings,
+  loadRiskFindings,
   sortRiskFindingsByPriority,
   summarizeRiskFindings,
   type RiskFinding,
@@ -87,13 +87,20 @@ export default function OpenADOverview() {
     }
   }, []);
 
-  const loadRisks = useCallback(() => setRisks(readRiskFindings()), []);
+  const loadRisks = useCallback(async () => {
+    try {
+      setRisks(await loadRiskFindings());
+    } catch {
+      setRisks([]);
+    }
+  }, []);
 
   useEffect(() => {
     void loadSessions();
-    loadRisks();
-    window.addEventListener(RISK_FINDINGS_UPDATED_EVENT, loadRisks);
-    return () => window.removeEventListener(RISK_FINDINGS_UPDATED_EVENT, loadRisks);
+    void loadRisks();
+    const onRiskUpdate = () => void loadRisks();
+    window.addEventListener(RISK_FINDINGS_UPDATED_EVENT, onRiskUpdate);
+    return () => window.removeEventListener(RISK_FINDINGS_UPDATED_EVENT, onRiskUpdate);
   }, [loadRisks, loadSessions]);
 
   const riskSummary = useMemo(() => summarizeRiskFindings(risks), [risks]);

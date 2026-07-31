@@ -1,5 +1,6 @@
 import { analyzePermissionExposure, type PermissionExposureFinding, type PermissionExposureRemediationEffort } from './permissionExposure';
 import type { PermissionReportItem } from './reportPayload';
+import { apiBase } from './runtimeApi';
 
 export type RiskFindingStatus = 'open' | 'accepted' | 'resolved';
 export type RiskFindingSeverity = 'critical' | 'high' | 'medium' | 'low';
@@ -59,7 +60,44 @@ export interface RiskFindingSummary {
 export const RISK_FINDINGS_KEY = 'permissionProtector.riskFindings';
 export const RISK_FINDINGS_UPDATED_EVENT = 'permission-protector:risk-findings-updated';
 
-function browserStorage() {
+interface RiskFindingWire {
+  id: string;
+  fingerprint: string;
+  status: RiskFindingStatus;
+  severity: RiskFindingSeverity;
+  type: string;
+  title: string;
+  suggested_action: string;
+  path: string;
+  trustee: string;
+  trustee_sid: string;
+  rights: string;
+  inherited: boolean;
+  source: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  last_session_id?: string;
+  seen_count: number;
+  note?: string;
+  description?: string;
+  impact?: string;
+  category?: string;
+  priority_score?: number;
+  confidence?: string;
+  remediation_effort?: PermissionExposureRemediationEffort;
+  business_question?: string;
+  control_mapping?: string[];
+  evidence?: string[];
+  sensitive_labels?: string[];
+}
+
+interface RiskFindingListResponse {
+  items?: RiskFindingWire[];
+}
+
+let legacyMigrationPromise: Promise<void> | null = null;
+
+function legacyBrowserStorage() {
   if (typeof window === 'undefined') {
     return null;
   }
@@ -177,17 +215,8 @@ function sanitizeFinding(value: Partial<RiskFinding> | null | undefined): RiskFi
   };
 }
 
-function persistRiskFindings(items: RiskFinding[]) {
-  const storage = browserStorage();
-  if (!storage) {
-    return;
-  }
-  storage.setItem(RISK_FINDINGS_KEY, JSON.stringify(items));
-  window.dispatchEvent(new Event(RISK_FINDINGS_UPDATED_EVENT));
-}
-
-export function readRiskFindings() {
-  const storage = browserStorage();
+function readLegacyRiskFindings() {
+  const storage = legacyBrowserStorage();
   if (!storage) {
     return [];
   }
@@ -210,7 +239,121 @@ export function readRiskFindings() {
   }
 }
 
-export function summarizeRiskFindings(items = readRiskFindings()): RiskFindingSummary {
+function toWireFinding(finding: RiskFinding): Omit<RiskFindingWire, 'id'> {
+  return {
+    fingerprint: finding.fingerprint,
+    status: finding.status,
+    severity: finding.severity,
+    type: finding.type,
+    title: finding.title,
+    suggested_action: finding.suggestedAction,
+    path: finding.path,
+    trustee: finding.trustee,
+    trustee_sid: finding.trusteeSid,
+    rights: finding.rights,
+    inherited: finding.inherited,
+    source: finding.source,
+    first_seen_at: finding.firstSeenAt,
+    last_seen_at: finding.lastSeenAt,
+    last_session_id: finding.lastSessionID,
+    seen_count: finding.seenCount,
+    note: finding.note,
+    description: finding.description,
+    impact: finding.impact,
+    category: finding.category,
+    priority_score: finding.priorityScore,
+    confidence: finding.confidence,
+    remediation_effort: finding.remediationEffort,
+    business_question: finding.businessQuestion,
+    control_mapping: finding.controlMapping,
+    evidence: finding.evidence,
+    sensitive_labels: finding.sensitiveLabels,
+  };
+}
+
+function fromWireFinding(finding: RiskFindingWire): RiskFinding | null {
+  return sanitizeFinding({
+    id: finding.id,
+    fingerprint: finding.fingerprint,
+    status: finding.status,
+    severity: finding.severity,
+    type: finding.type,
+    title: finding.title,
+    suggestedAction: finding.suggested_action,
+    path: finding.path,
+    trustee: finding.trustee,
+    trusteeSid: finding.trustee_sid,
+    rights: finding.rights,
+    inherited: finding.inherited,
+    source: finding.source,
+    firstSeenAt: finding.first_seen_at,
+    lastSeenAt: finding.last_seen_at,
+    lastSessionID: finding.last_session_id,
+    seenCount: finding.seen_count,
+    note: finding.note,
+    description: finding.description,
+    impact: finding.impact,
+    category: finding.category,
+    priorityScore: finding.priority_score,
+    confidence: finding.confidence,
+    remediationEffort: finding.remediation_effort,
+    businessQuestion: finding.business_question,
+    controlMapping: finding.control_mapping,
+    evidence: finding.evidence,
+    sensitiveLabels: finding.sensitive_labels,
+  });
+}
+
+async function requestJSON<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`${apiBase()}${path}`, options);
+  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) {
+    throw new Error(data.error || `Risk finding request failed (${response.status})`);
+  }
+  return data;
+}
+
+async function migrateLegacyRiskFindings() {
+  const storage = legacyBrowserStorage();
+  if (!storage || !storage.getItem(RISK_FINDINGS_KEY)) {
+    return;
+  }
+
+  if (!legacyMigrationPromise) {
+    legacyMigrationPromise = (async () => {
+      const items = readLegacyRiskFindings();
+      if (items.length > 0) {
+        await requestJSON('/api/risk-findings/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: items.map(toWireFinding) }),
+        });
+      }
+      storage.removeItem(RISK_FINDINGS_KEY);
+    })().finally(() => {
+      legacyMigrationPromise = null;
+    });
+  }
+
+  await legacyMigrationPromise;
+}
+
+function dispatchRiskFindingsUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(RISK_FINDINGS_UPDATED_EVENT));
+  }
+}
+
+export async function loadRiskFindings() {
+  await migrateLegacyRiskFindings();
+  const data = await requestJSON<RiskFindingListResponse>('/api/risk-findings');
+  return (Array.isArray(data.items) ? data.items : [])
+    .map((item) => fromWireFinding(item))
+    .filter((item): item is RiskFinding => Boolean(item))
+    .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+}
+
+export function summarizeRiskFindings(items: RiskFinding[] = []): RiskFindingSummary {
   const openItems = items.filter((item) => item.status === 'open');
   const sensitiveOpenItems = openItems.filter((item) => item.category === 'sensitive-data' || Boolean(item.sensitiveLabels?.length));
   const priorityScores = openItems
@@ -260,7 +403,7 @@ export function sortRiskFindingsByPriority<T extends Pick<RiskFinding, 'priority
   );
 }
 
-export function upsertRiskFindingsFromScan({
+export async function upsertRiskFindingsFromScan({
   permissions,
   sessionID,
   scannedAt = new Date().toISOString(),
@@ -271,59 +414,36 @@ export function upsertRiskFindingsFromScan({
 }) {
   const generated = analyzePermissionExposure(permissions).findings.map((finding) => findingFromExposure(finding, scannedAt, sessionID));
   if (generated.length === 0) {
-    return summarizeRiskFindings();
+    return 0;
   }
 
-  const existing = readRiskFindings();
-  const byFingerprint = new Map(existing.map((item) => [item.fingerprint, item]));
-
-  for (const finding of generated) {
-    const previous = byFingerprint.get(finding.fingerprint);
-    if (!previous) {
-      byFingerprint.set(finding.fingerprint, finding);
-      continue;
-    }
-
-    byFingerprint.set(finding.fingerprint, {
-      ...previous,
-      title: finding.title,
-      suggestedAction: finding.suggestedAction,
-      severity: finding.severity,
-      type: finding.type,
-      rights: finding.rights,
-      inherited: finding.inherited,
-      source: finding.source,
-      trusteeSid: finding.trusteeSid,
-      description: finding.description,
-      impact: finding.impact,
-      category: finding.category,
-      priorityScore: finding.priorityScore,
-      confidence: finding.confidence,
-      remediationEffort: finding.remediationEffort,
-      businessQuestion: finding.businessQuestion,
-      controlMapping: finding.controlMapping,
-      evidence: finding.evidence,
-      sensitiveLabels: finding.sensitiveLabels,
-      lastSeenAt: scannedAt,
-      lastSessionID: sessionID || previous.lastSessionID,
-      seenCount: previous.seenCount + 1,
-      status: previous.status === 'resolved' ? 'open' : previous.status,
-    });
-  }
-
-  const next = Array.from(byFingerprint.values()).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
-  persistRiskFindings(next);
-  return summarizeRiskFindings(next);
+  await migrateLegacyRiskFindings();
+  const data = await requestJSON<{ count?: number }>('/api/risk-findings/upsert', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: generated.map(toWireFinding) }),
+  });
+  dispatchRiskFindingsUpdated();
+  return Number(data.count || 0);
 }
 
-export function updateRiskFindingStatus(id: string, status: RiskFindingStatus, note?: string) {
-  const next = readRiskFindings().map((item) => item.id === id ? {
-    ...item,
-    status,
-    note: normalized(note) || item.note,
-  } : item);
-  persistRiskFindings(next);
-  return next;
+export async function updateRiskFindingStatus(id: string, status: RiskFindingStatus, note?: string) {
+  await migrateLegacyRiskFindings();
+  const payload: { status: RiskFindingStatus; note?: string } = { status };
+  if (normalized(note)) {
+    payload.note = normalized(note);
+  }
+  const data = await requestJSON<RiskFindingWire>(`/api/risk-findings/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const finding = fromWireFinding(data);
+  if (!finding) {
+    throw new Error('Risk finding response is invalid');
+  }
+  dispatchRiskFindingsUpdated();
+  return finding;
 }
 
 export function riskSeverityChipClass(severity: RiskFindingSeverity) {

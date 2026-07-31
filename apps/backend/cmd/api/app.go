@@ -8,14 +8,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/weibinliao/OpenAD/internal/ad"
 	"github.com/weibinliao/OpenAD/internal/comparison"
 	"github.com/weibinliao/OpenAD/internal/comparisonservice"
+	"github.com/weibinliao/OpenAD/internal/database"
 	"github.com/weibinliao/OpenAD/internal/export"
 	"github.com/weibinliao/OpenAD/internal/historyservice"
 	"github.com/weibinliao/OpenAD/internal/models"
+	"github.com/weibinliao/OpenAD/internal/riskservice"
 	"github.com/weibinliao/OpenAD/internal/scanservice"
-	"github.com/gin-gonic/gin"
 )
 
 type scanRunner interface {
@@ -32,6 +34,13 @@ type historyReader interface {
 
 type comparisonRunner interface {
 	Compare(request comparisonservice.Request) (*comparison.ChangeReport, error)
+}
+
+type riskFindingStore interface {
+	List() ([]models.RiskFinding, error)
+	UpsertFromScan(inputs []riskservice.FindingInput) (int, error)
+	ImportLegacy(inputs []riskservice.FindingInput) (int, error)
+	UpdateStatus(id, status string, note *string) (*models.RiskFinding, error)
 }
 
 type fileExporter interface {
@@ -72,23 +81,25 @@ type activeDirectoryService interface {
 }
 
 type applicationDependencies struct {
-	scans       scanRunner
-	history     historyReader
-	comparison  comparisonRunner
-	exporter    fileExporter
-	ad          activeDirectoryService
-	progressHub *scanProgressHub
-	scanCancels *scanCancelRegistry
+	scans        scanRunner
+	history      historyReader
+	comparison   comparisonRunner
+	riskFindings riskFindingStore
+	exporter     fileExporter
+	ad           activeDirectoryService
+	progressHub  *scanProgressHub
+	scanCancels  *scanCancelRegistry
 }
 
 type application struct {
-	scans       scanRunner
-	history     historyReader
-	comparison  comparisonRunner
-	exporter    fileExporter
-	ad          activeDirectoryService
-	progressHub *scanProgressHub
-	scanCancels *scanCancelRegistry
+	scans        scanRunner
+	history      historyReader
+	comparison   comparisonRunner
+	riskFindings riskFindingStore
+	exporter     fileExporter
+	ad           activeDirectoryService
+	progressHub  *scanProgressHub
+	scanCancels  *scanCancelRegistry
 }
 
 type defaultADService struct{}
@@ -104,6 +115,10 @@ func newApplication(dependencies applicationDependencies) *application {
 
 	if dependencies.comparison == nil {
 		dependencies.comparison = comparisonservice.New()
+	}
+
+	if dependencies.riskFindings == nil {
+		dependencies.riskFindings = riskservice.New(database.DB)
 	}
 
 	if dependencies.exporter == nil {
@@ -123,13 +138,14 @@ func newApplication(dependencies applicationDependencies) *application {
 	}
 
 	return &application{
-		scans:       dependencies.scans,
-		history:     dependencies.history,
-		comparison:  dependencies.comparison,
-		exporter:    dependencies.exporter,
-		ad:          dependencies.ad,
-		progressHub: dependencies.progressHub,
-		scanCancels: dependencies.scanCancels,
+		scans:        dependencies.scans,
+		history:      dependencies.history,
+		comparison:   dependencies.comparison,
+		riskFindings: dependencies.riskFindings,
+		exporter:     dependencies.exporter,
+		ad:           dependencies.ad,
+		progressHub:  dependencies.progressHub,
+		scanCancels:  dependencies.scanCancels,
 	}
 }
 

@@ -1,11 +1,11 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, CheckCircle2, ListChecks, ShieldAlert, ShieldCheck, Sparkles, Target, UsersRound } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
 import {
   RISK_FINDINGS_UPDATED_EVENT,
-  readRiskFindings,
+  loadRiskFindings,
   summarizeRiskFindings,
   updateRiskFindingStatus,
   type RiskFinding,
@@ -110,24 +110,41 @@ export default function FindingsPage() {
   const [statusFilter, setStatusFilter] = useState<RiskFindingStatus | 'all'>('open');
   const [severityFilter, setSeverityFilter] = useState<RiskFindingSeverity | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [findingsLoading, setFindingsLoading] = useState(true);
+  const [findingsError, setFindingsError] = useState('');
+  const [statusPendingID, setStatusPendingID] = useState('');
 
-  const reloadFindings = () => setFindings(readRiskFindings());
+  const reloadFindings = useCallback(async (showLoading = true) => {
+    if (showLoading) {
+      setFindingsLoading(true);
+    }
+    setFindingsError('');
+    try {
+      setFindings(await loadRiskFindings());
+    } catch (requestError) {
+      setFindingsError(requestError instanceof Error ? requestError.message : 'Risk findings are unavailable.');
+    } finally {
+      if (showLoading) {
+        setFindingsLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
     setWorkspaceSettings(readWorkspaceSettings());
-    reloadFindings();
+    void reloadFindings();
 
-    const onUpdate = () => reloadFindings();
+    const onUpdate = () => void reloadFindings(false);
     window.addEventListener(RISK_FINDINGS_UPDATED_EVENT, onUpdate);
     window.addEventListener('storage', onUpdate);
     return () => {
       window.removeEventListener(RISK_FINDINGS_UPDATED_EVENT, onUpdate);
       window.removeEventListener('storage', onUpdate);
     };
-  }, []);
+  }, [reloadFindings]);
 
   const summary = useMemo(() => summarizeRiskFindings(findings), [findings]);
   const categoryOptions = useMemo(
@@ -143,8 +160,17 @@ export default function FindingsPage() {
     [categoryFilter, findings, severityFilter, statusFilter]
   );
 
-  const setStatus = (finding: RiskFinding, status: RiskFindingStatus) => {
-    setFindings(updateRiskFindingStatus(finding.id, status));
+  const setStatus = async (finding: RiskFinding, status: RiskFindingStatus) => {
+    setStatusPendingID(finding.id);
+    setFindingsError('');
+    try {
+      const updated = await updateRiskFindingStatus(finding.id, status);
+      setFindings((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch (requestError) {
+      setFindingsError(requestError instanceof Error ? requestError.message : 'Risk finding update failed.');
+    } finally {
+      setStatusPendingID('');
+    }
   };
 
   const openFindingInReport = (finding: RiskFinding) => {
@@ -277,7 +303,18 @@ export default function FindingsPage() {
               </label>
             </div>
 
-            {visibleFindings.length === 0 ? (
+            {findingsLoading ? (
+              <div className="px-6 py-12 text-center text-sm text-fg-muted" role="status">
+                {text(locale, 'Loading findings...', '正在加载风险项...')}
+              </div>
+            ) : findingsError && findings.length === 0 ? (
+              <EmptyState
+                icon={ShieldAlert}
+                title={text(locale, 'Findings could not be loaded', '风险项加载失败')}
+                description={findingsError}
+                action={<Button variant="outline" size="sm" onClick={() => void reloadFindings()}>{text(locale, 'Retry', '重试')}</Button>}
+              />
+            ) : visibleFindings.length === 0 ? (
               <EmptyState
                 icon={ShieldCheck}
                 title={text(locale, 'No findings in this queue', '当前队列没有风险项')}
@@ -285,6 +322,11 @@ export default function FindingsPage() {
               />
             ) : (
               <div className="space-y-3">
+                {findingsError ? (
+                  <div className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger" role="alert">
+                    {findingsError}
+                  </div>
+                ) : null}
                 {visibleFindings.map((finding) => (
                   <article key={finding.id} className="rounded-lg border border-line bg-surface-base p-4 shadow-token-sm">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -349,18 +391,18 @@ export default function FindingsPage() {
                           {text(locale, 'Open report scope', '打开报告范围')}
                         </Button>
                         {finding.status !== 'accepted' ? (
-                          <Button variant="outline" size="sm" className="lg:justify-start" onClick={() => setStatus(finding, 'accepted')}>
+                          <Button variant="outline" size="sm" className="lg:justify-start" loading={statusPendingID === finding.id} onClick={() => void setStatus(finding, 'accepted')}>
                             <UsersRound className="h-3.5 w-3.5" />
                             {text(locale, 'Accept risk', '接受风险')}
                           </Button>
                         ) : null}
                         {finding.status !== 'resolved' ? (
-                          <Button variant="outline" size="sm" className="lg:justify-start" onClick={() => setStatus(finding, 'resolved')}>
+                          <Button variant="outline" size="sm" className="lg:justify-start" loading={statusPendingID === finding.id} onClick={() => void setStatus(finding, 'resolved')}>
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             {text(locale, 'Mark resolved', '标记解决')}
                           </Button>
                         ) : (
-                          <Button variant="outline" size="sm" className="lg:justify-start" onClick={() => setStatus(finding, 'open')}>
+                          <Button variant="outline" size="sm" className="lg:justify-start" loading={statusPendingID === finding.id} onClick={() => void setStatus(finding, 'open')}>
                             {text(locale, 'Reopen', '重新打开')}
                           </Button>
                         )}

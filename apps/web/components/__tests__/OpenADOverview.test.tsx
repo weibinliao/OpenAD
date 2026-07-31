@@ -50,7 +50,7 @@ jest.mock('../../hooks/useRuntimeHealth', () => ({
 
 jest.mock('../../lib/riskFindings', () => ({
   ...jest.requireActual('../../lib/riskFindings'),
-  readRiskFindings: () => mockRiskFindings,
+  loadRiskFindings: () => Promise.resolve(mockRiskFindings),
 }));
 
 describe('OpenAD operations overview', () => {

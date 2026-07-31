@@ -53,6 +53,7 @@ func InitWithDSN(dsn string) error {
 		&models.ScanSession{},
 		&models.Permission{},
 		&models.PermissionChange{},
+		&models.RiskFinding{},
 		&models.ADConnectionProfile{},
 		&models.DirectorySyncRun{},
 		&models.ADUserRecord{},

@@ -42,6 +42,7 @@ func TestInitAndInitFromEnvUseDefaultSQLiteWhenDatabaseURLIsEmpty(t *testing.T) 
 
 	assert.NoError(t, Init())
 	assert.True(t, Ready())
+	assert.True(t, DB.Migrator().HasTable("risk_findings"))
 	assert.True(t, strings.HasPrefix(StoreDescription, "sqlite:"))
 	assert.FileExists(t, filepath.Join(dataDir, "permission-protector.db"))
 	assert.NoError(t, InitFromEnv())
