@@ -50,6 +50,7 @@
 
 #### 修复
 
+- 修复按资源分析忽略扫描记录中的 AD 组来源、把组展开成员误算为直接用户以及空成员组不显示的问题；现有和后续扫描会结合已绑定的 AD 快照保留组父节点，先按组展示成员，再展示真正的直接用户与未解析 SID，访问分析和目录浏览均支持默认展开与折叠。
 - 修复 `DOMAIN\*` 排除模式退化成全局通配符并过滤所有 SID、AD 组和用户的问题；限定命名空间的通配模式现在只匹配对应域或 Windows 命名空间。
 - 修复 AD 展开返回空结果或 LDAP 不可用时前端再次扫描并生成重复历史会话的问题；一次扫描操作现在只创建一个会话，解析失败时在该会话中保留原始 ACL、未解析原因和非致命警告。
 
@@ -123,6 +124,7 @@
 
 #### Fixed
 
+- Fixed resource analysis ignoring persisted AD group provenance, miscounting expanded group members as direct users, and dropping groups with no snapshot members. Existing and future scans now use their bound AD snapshot to preserve group parents, list each group's members first, then true direct users and unresolved SIDs, with expandable group trees in Access Analysis and Directory Explorer.
 - Fixed `DOMAIN\*` exclusion patterns degrading into global wildcards that filtered every SID, AD group, and user. Qualified wildcard patterns now remain scoped to their domain or Windows namespace.
 - Fixed empty AD expansion or unavailable LDAP causing the Web client to scan a second time and create duplicate history sessions. One scan action now creates one session, preserving raw ACLs, unresolved reasons, and non-fatal warnings in that same session when identity resolution cannot complete.
 
