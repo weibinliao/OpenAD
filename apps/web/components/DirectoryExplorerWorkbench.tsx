@@ -23,6 +23,7 @@ import { apiBase } from '../lib/runtimeApi';
 import { cn } from '../lib/cn';
 import {
   directoryGroupName,
+  directoryUserDirectGroupDNs,
   groupNameFromDN,
   searchDirectoryObjects,
   type DirectoryGroup,
@@ -705,7 +706,7 @@ export default function DirectoryExplorerWorkbench({
               >
                 {matches.map((match, index) => {
                   const MatchIcon = match.kind === 'user' ? UserRound : Users;
-                  const groupCount = match.kind === 'user' ? match.user.groups?.length || 0 : null;
+                  const groupCount = match.kind === 'user' ? directoryUserDirectGroupDNs(match.user).length : null;
                   const isSelected = currentDN.toLowerCase() === match.dn.toLowerCase();
                   return (
                     <button
@@ -822,7 +823,7 @@ function UserInspector({
   user: DirectoryUser;
   onSelectGroup: (group: DirectoryGroup) => void;
 }) {
-  const groups = user.groups || [];
+  const groups = directoryUserDirectGroupDNs(user);
   return (
     <div className="space-y-5">
       <div className="flex items-start gap-3">

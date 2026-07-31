@@ -30,9 +30,14 @@ describe('DirectoryExplorerWorkbench', () => {
             email: 'alice@lab.local',
             department: 'IT',
             domain: 'LAB.LOCAL',
-            groups: [
+            group_dns: [
               'CN=Domain Admins,DC=lab,DC=local',
               'CN=File Operators,DC=lab,DC=local',
+            ],
+            groups: [
+              'Domain Admins',
+              'File Operators',
+              'Nested Access',
             ],
           }],
         });
@@ -125,7 +130,27 @@ describe('DirectoryExplorerWorkbench', () => {
     expect(within(inspector).getByText('Direct AD groups')).toBeInTheDocument();
     expect(within(inspector).getByText('Domain Admins')).toBeInTheDocument();
     expect(within(inspector).getByText('File Operators')).toBeInTheDocument();
+    expect(within(inspector).queryByText('Nested Access')).not.toBeInTheDocument();
     expect(within(inspector).getByText('alice@lab.local')).toBeInTheDocument();
+  });
+
+  test('opens a user direct group with its distinguished name', async () => {
+    render(<I18nProvider><DirectoryExplorerWorkbench connectionId="profile-1" /></I18nProvider>);
+
+    fireEvent.click(await screen.findByText('Alice'));
+    const inspector = screen.getByRole('region', { name: 'Object details' });
+    fireEvent.click(await within(inspector).findByText('File Operators'));
+
+    await waitFor(() => {
+      const groupMembersCall = (global.fetch as jest.Mock).mock.calls.find(
+        ([input]) => String(input).endsWith('/api/ad/groups/members'),
+      );
+      expect(groupMembersCall).toBeDefined();
+      expect(JSON.parse(String(groupMembersCall?.[1]?.body))).toMatchObject({
+        connection_id: 'profile-1',
+        group_dn: 'CN=File Operators,DC=lab,DC=local',
+      });
+    });
   });
 
   test('shows group details and members in the right inspector when selected', async () => {

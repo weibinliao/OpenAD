@@ -10,6 +10,7 @@ export interface DirectoryUser {
   department?: string;
   division?: string;
   domain?: string;
+  group_dns?: string[];
   groups?: string[];
 }
 
@@ -32,6 +33,12 @@ interface DirectorySearchOptions {
 export function groupNameFromDN(distinguishedName: string) {
   const firstPart = distinguishedName.split(',')[0]?.trim() || distinguishedName;
   return firstPart.replace(/^(CN|OU)=/i, '') || distinguishedName;
+}
+
+export function directoryUserDirectGroupDNs(user: DirectoryUser) {
+  const directGroupDNs = user.group_dns;
+  const candidates = Array.isArray(directGroupDNs) ? directGroupDNs : user.groups || [];
+  return candidates.filter((value) => /^(CN|OU)=/i.test(value.trim()));
 }
 
 export function directoryGroupName(group: DirectoryGroup) {
