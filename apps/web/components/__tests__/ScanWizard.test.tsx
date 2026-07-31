@@ -66,4 +66,28 @@ describe('ScanWizard', () => {
       expect(startButton).toBeDisabled();
     }
   });
+
+  test('keeps the directory browser usable within a short window', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({
+      ok: true,
+      json: async () => ({ path: 'C:\\', parent: '', items: [] }),
+    } as Response)) as jest.MockedFunction<typeof fetch>;
+    renderWizard();
+
+    fireEvent.click(screen.getByText('Folder Permissions'));
+    fireEvent.click(screen.getByText('Next'));
+    fireEvent.click(screen.getByRole('button', { name: 'Browse Folders' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Browse Server Folders' });
+    expect(dialog).toHaveClass(
+      'flex',
+      'max-h-[calc(100dvh-2rem)]',
+      'overflow-hidden',
+    );
+    expect(dialog.querySelector('[data-scroll-region="dialog-body"]')).toHaveClass(
+      'min-h-0',
+      'overflow-y-auto',
+      'overscroll-contain',
+    );
+  });
 });

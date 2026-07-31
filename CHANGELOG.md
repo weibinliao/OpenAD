@@ -50,6 +50,7 @@
 
 #### 修复
 
+- 修复窗口化或较矮窗口中，长弹窗超出视口后无法上下滚动、顶部字段和底部操作不可达的问题；共享弹窗现在限制在动态视口高度内并支持纵向滚动，扫描中心的目录选择器也采用固定标题栏和独立滚动主体。
 - 修复从 AD 用户详情点击直属组时把组显示名误当成 DN、导致组成员查询返回 `group not found` 的问题；目录浏览现在使用用户结果中的完整 `group_dns` 展示、计数和打开直属组，并继续兼容旧接口中已是 DN 的 `groups` 值。
 - 修复按资源分析忽略扫描记录中的 AD 组来源、把组展开成员误算为直接用户以及空成员组不显示的问题；现有和后续扫描会结合已绑定的 AD 快照保留组父节点，先按组展示成员，再展示真正的直接用户与未解析 SID，访问分析和目录浏览均支持默认展开与折叠。
 - 修复 `DOMAIN\*` 排除模式退化成全局通配符并过滤所有 SID、AD 组和用户的问题；限定命名空间的通配模式现在只匹配对应域或 Windows 命名空间。
@@ -125,6 +126,7 @@
 
 #### Fixed
 
+- Fixed long dialogs extending beyond windowed or short viewports with no usable vertical scrolling, which made top fields and bottom actions unreachable. Shared dialogs now stay within the dynamic viewport and scroll vertically, and Scan Center's directory browser now uses a fixed header with an independently scrollable body.
 - Fixed direct-group navigation from AD user details sending a group display name as the DN and returning `group not found`. Directory Explorer now uses complete `group_dns` values to render, count, and open direct groups, while retaining compatibility with legacy `groups` values that are already DNs.
 - Fixed resource analysis ignoring persisted AD group provenance, miscounting expanded group members as direct users, and dropping groups with no snapshot members. Existing and future scans now use their bound AD snapshot to preserve group parents, list each group's members first, then true direct users and unresolved SIDs, with expandable group trees in Access Analysis and Directory Explorer.
 - Fixed `DOMAIN\*` exclusion patterns degrading into global wildcards that filtered every SID, AD group, and user. Qualified wildcard patterns now remain scoped to their domain or Windows namespace.

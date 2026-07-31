@@ -190,6 +190,19 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('Server address and domain account are required.')).toBeInTheDocument();
   });
 
+  test('keeps the connection dialog scrollable within a short window', async () => {
+    render(<SettingsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Add connection/ }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Add connection' });
+    expect(dialog).toHaveClass(
+      'max-h-[calc(100dvh-2rem)]',
+      'overflow-y-auto',
+      'overscroll-contain',
+    );
+  });
+
   test('keeps scan and report configuration out of system settings', async () => {
     render(<SettingsPage />);
 
