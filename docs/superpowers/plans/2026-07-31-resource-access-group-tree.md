@@ -213,20 +213,21 @@ git commit -m "feat(access): render AD groups as expandable parents"
 
 **Files:**
 - Modify: `apps/web/components/explorer/Explorer.tsx`
-- Modify: `apps/web/components/__tests__/ResourcesPage.test.tsx`
+- Create: `apps/web/components/__tests__/ExplorerResourceAnswer.test.tsx`
 
 - [ ] **Step 1: Add a failing Explorer regression assertion**
 
-Extend the resource-page test fixture so the selected resource returns a group parent and one member.
-Assert the compact answer shows the group before the member, exposes an accessible collapse control,
-and keeps the parent visible after collapse.
+Render the default `Explorer`, mock its completed-session response with one share, select the generated
+`Who can access ...?` suggestion, and return a group parent plus one member from the resource-access
+endpoint. Assert the compact answer shows the group before the member, exposes an accessible collapse
+control, and keeps the parent visible after collapse.
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
 Run:
 
 ```powershell
-& .\tools\node\npm.cmd --prefix .\apps\web test -- --runTestsByPath components/__tests__/ResourcesPage.test.tsx
+& .\tools\node\npm.cmd --prefix .\apps\web test -- --runTestsByPath components/__tests__/ExplorerResourceAnswer.test.tsx
 ```
 
 Expected: FAIL because Explorer treats `group` as a user and has no hierarchy control.
@@ -244,7 +245,7 @@ its parent group.
 Run:
 
 ```powershell
-& .\tools\node\npm.cmd --prefix .\apps\web test -- --runTestsByPath components/__tests__/ResourcesPage.test.tsx
+& .\tools\node\npm.cmd --prefix .\apps\web test -- --runTestsByPath components/__tests__/ExplorerResourceAnswer.test.tsx
 & .\tools\node\npm.cmd --prefix .\apps\web test
 & .\tools\node\npm.cmd --prefix .\apps\web run build:static
 ```
@@ -254,7 +255,7 @@ Expected: all suites pass and 16 static pages generate.
 - [ ] **Step 5: Commit Explorer behavior**
 
 ```powershell
-git add apps/web/components/explorer/Explorer.tsx apps/web/components/__tests__/ResourcesPage.test.tsx
+git add apps/web/components/explorer/Explorer.tsx apps/web/components/__tests__/ExplorerResourceAnswer.test.tsx
 git commit -m "feat(explorer): show resource access as an AD group tree"
 ```
 
