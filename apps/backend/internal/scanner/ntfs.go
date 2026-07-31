@@ -61,6 +61,8 @@ type Permission struct {
 	Domain                    string `json:"domain,omitempty"`
 	OriginatingGroup          string `json:"originating_group,omitempty"`
 	GroupInheritanceHierarchy string `json:"group_inheritance_hierarchy,omitempty"`
+	ResolutionSource          string `json:"resolution_source,omitempty"`
+	ResolutionReason          string `json:"resolution_reason,omitempty"`
 }
 
 type PathError struct {

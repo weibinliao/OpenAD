@@ -8,18 +8,23 @@ import (
 )
 
 type ScanSession struct {
-	ID               uuid.UUID          `gorm:"type:uuid;primaryKey" json:"id"`
-	RootPath         string             `gorm:"not null" json:"root_path"`
-	Status           string             `gorm:"not null;index" json:"status"`
-	MaxDepth         int                `gorm:"not null" json:"max_depth"`
-	IncludeInherited bool               `gorm:"not null" json:"include_inherited"`
-	ItemsScanned     int                `gorm:"not null" json:"items_scanned"`
-	PermissionCount  int                `gorm:"not null" json:"permission_count"`
-	ErrorMessage     string             `json:"error_message,omitempty"`
-	StartedAt        time.Time          `gorm:"not null;index:idx_scan_sessions_started_at,sort:desc" json:"started_at"`
-	FinishedAt       *time.Time         `json:"finished_at,omitempty"`
-	Permissions      []Permission       `gorm:"foreignKey:ScanSessionID" json:"permissions,omitempty"`
-	Changes          []PermissionChange `gorm:"foreignKey:ScanSessionID" json:"changes,omitempty"`
+	ID                        uuid.UUID          `gorm:"type:uuid;primaryKey" json:"id"`
+	RootPath                  string             `gorm:"not null" json:"root_path"`
+	Status                    string             `gorm:"not null;index" json:"status"`
+	MaxDepth                  int                `gorm:"not null" json:"max_depth"`
+	IncludeInherited          bool               `gorm:"not null" json:"include_inherited"`
+	ItemsScanned              int                `gorm:"not null" json:"items_scanned"`
+	PermissionCount           int                `gorm:"not null" json:"permission_count"`
+	DirectorySyncRunID        *uuid.UUID         `gorm:"type:uuid;index" json:"directory_sync_run_id,omitempty"`
+	IdentityResolutionMode    string             `json:"identity_resolution_mode,omitempty"`
+	ResolvedPrincipalCount    int                `json:"resolved_principal_count"`
+	UnresolvedPrincipalCount  int                `json:"unresolved_principal_count"`
+	IdentityResolutionWarning string             `json:"identity_resolution_warning,omitempty"`
+	ErrorMessage              string             `json:"error_message,omitempty"`
+	StartedAt                 time.Time          `gorm:"not null;index:idx_scan_sessions_started_at,sort:desc" json:"started_at"`
+	FinishedAt                *time.Time         `json:"finished_at,omitempty"`
+	Permissions               []Permission       `gorm:"foreignKey:ScanSessionID" json:"permissions,omitempty"`
+	Changes                   []PermissionChange `gorm:"foreignKey:ScanSessionID" json:"changes,omitempty"`
 }
 
 type Permission struct {
@@ -46,6 +51,8 @@ type Permission struct {
 	Domain                    string    `json:"domain,omitempty"`
 	OriginatingGroup          string    `json:"originating_group,omitempty"`
 	GroupInheritanceHierarchy string    `json:"group_inheritance_hierarchy,omitempty"`
+	ResolutionSource          string    `json:"resolution_source,omitempty"`
+	ResolutionReason          string    `json:"resolution_reason,omitempty"`
 	CreatedAt                 time.Time `gorm:"index:idx_permissions_session_sort,priority:2,sort:desc" json:"created_at"`
 }
 

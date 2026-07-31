@@ -8,6 +8,8 @@
 
 #### 新增
 
+- AD 组详情新增成员报表导出：默认下载 Excel，也可从菜单选择 CSV；导出范围跟随当前“仅直属成员/包含嵌套成员”选择，并包含成员身份、SID、部门、层级和成员路径。
+
 - 确立 OpenAD open core 双许可结构：除 `ee/` 外的仓库主体采用 AGPL-3.0，新增
   `LICENSING.md`、`NOTICE` 及 `ee/` 商业许可边界。
 - 在 `CONTRIBUTING.md` 中加入保留贡献者版权且允许项目所有者在商业许可下再授权贡献的 CLA；
@@ -22,6 +24,9 @@
 - 顶部工作区搜索新增 `/reports`、`/scan`、`/settings` 等模块命令，并复用共享导航定义。
 
 #### 变更
+
+- 新扫描现在绑定活动 AD 连接最新的已完成快照，优先从本地快照解析用户、组、嵌套成员和 Windows 特殊 SID，仅将快照未命中项交给实时 LDAP 补充。
+- 扫描完成摘要和报告中心现在显示 SID 解析来源与解析数量；历史会话会在读取时选择绑定快照，或按扫描前 SID 覆盖率推断最合适的已完成快照进行只读补全，不改写原始 ACL 证据。
 
 - 首页总览现在直接提供未连接 AD 时的快速连接、四级风险分布、最近权限条目数和最后扫描时间；遗留 `/dashboard` 地址在静态导出中保留页面并无闪烁地跳转到首页。
 - **破坏性变更（网络默认值）**：Go API、静态 Web、开发服务器和 Windows 浏览器模式启动器现在默认只绑定 `127.0.0.1`，空 `ALLOW_ORIGINS` 只允许本机 Web 来源；依赖默认 LAN 访问的部署必须改为显式开启。恢复方法：以管理员身份运行 `scripts\enable-lan-access.bat`，替换脚本输出命令中的 `your-host-ip` 后执行该一次性 LAN 启动命令。
@@ -44,6 +49,9 @@
 - 统一桌面壳的产品层级：窗口标题栏只显示 OpenAD，侧栏从模块导航直接开始；固定按钮仅在展开时作为“工作台”工具行操作出现，避免重复品牌和无用途空白区。
 
 #### 修复
+
+- 修复 `DOMAIN\*` 排除模式退化成全局通配符并过滤所有 SID、AD 组和用户的问题；限定命名空间的通配模式现在只匹配对应域或 Windows 命名空间。
+- 修复 AD 展开返回空结果或 LDAP 不可用时前端再次扫描并生成重复历史会话的问题；一次扫描操作现在只创建一个会话，解析失败时在该会话中保留原始 ACL、未解析原因和非致命警告。
 
 - 修复 SQLite 在扫描写入与历史查询并发时可能立即返回 `database is locked` 的问题；SQLite 连接现在使用 WAL、5 秒 `busy_timeout` 和单连接池串行写入，PostgreSQL 配置保持不变。
 - 修复同一 `scan_id` 的重复扫描会覆盖取消函数、以及旧扫描清理可能误删新注册项的问题；重复 ID 和超出扫描并发上限的请求现在明确返回 HTTP 409，默认同时只运行一个扫描。
@@ -73,6 +81,8 @@
 
 #### Added
 
+- Added group-member report export to AD group details. Excel is the default download, CSV remains available from the format menu, and the export follows the current direct-only or nested-member scope while including identity, SID, department, depth, and membership-path fields.
+
 - Established OpenAD's open-core dual-license structure: the repository body excluding `ee/` is under
   AGPL-3.0, with new `LICENSING.md`, `NOTICE`, and a commercial license boundary under `ee/`.
 - Added CLA terms to `CONTRIBUTING.md` that preserve contributor copyright while allowing commercial
@@ -88,6 +98,9 @@
 - Added `/reports`, `/scan`, `/settings`, and other module commands to workspace search, derived from shared navigation definitions.
 
 #### Changed
+
+- New scans now bind to the active AD connection's latest completed snapshot, resolving users, groups, nested memberships, and well-known Windows SIDs locally before sending only snapshot misses to live LDAP.
+- Scan completion and Report Center now surface SID-resolution sources and counts. Historical sessions are enriched read-only from their bound snapshot or the completed pre-scan snapshot with the best SID coverage, without rewriting stored ACL evidence.
 
 - The Overview now provides inline quick AD connection when disconnected, a four-level risk distribution, the latest permission count, and the last scan time. The legacy `/dashboard` static-export page now redirects to home without rendering stale content.
 - **Breaking change (network defaults):** The Go API, static Web server, development server, and Windows browser-mode launchers now bind only to `127.0.0.1` by default, while an empty `ALLOW_ORIGINS` allows only local Web origins. Deployments that relied on implicit LAN access must opt in explicitly. To restore LAN access, run `scripts\enable-lan-access.bat` as Administrator, replace `your-host-ip` in the printed command, and run that one-time LAN launch command.
@@ -109,6 +122,9 @@
 - Unified desktop-shell product hierarchy: the window title bar now shows only OpenAD and the sidebar starts directly with module navigation. Its pin control appears only as an action in the expanded Workspace row, eliminating redundant branding and an empty header region.
 
 #### Fixed
+
+- Fixed `DOMAIN\*` exclusion patterns degrading into global wildcards that filtered every SID, AD group, and user. Qualified wildcard patterns now remain scoped to their domain or Windows namespace.
+- Fixed empty AD expansion or unavailable LDAP causing the Web client to scan a second time and create duplicate history sessions. One scan action now creates one session, preserving raw ACLs, unresolved reasons, and non-fatal warnings in that same session when identity resolution cannot complete.
 
 - Fixed SQLite returning `database is locked` immediately during concurrent scan writes and history reads. SQLite now uses WAL, a five-second `busy_timeout`, and a single-connection pool to serialize writes; PostgreSQL configuration is unchanged.
 - Fixed duplicate scans with the same `scan_id` overwriting cancellation callbacks and stale scan cleanup removing a newer registration. Duplicate IDs and requests above the scan concurrency limit now return HTTP 409, with one concurrent scan by default.

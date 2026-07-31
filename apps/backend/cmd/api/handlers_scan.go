@@ -9,6 +9,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/weibinliao/OpenAD/internal/database"
+	"github.com/weibinliao/OpenAD/internal/identityresolution"
 	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/weibinliao/OpenAD/internal/scanservice"
 )
@@ -121,8 +124,9 @@ func (application *application) handleScan(ctx *gin.Context) {
 		}
 
 		effectivePermissions := *request.EffectivePermissions
+		snapshotConnectionID := snapshotConnectionIDForRequest(effectivePermissions)
 		expanderFactory = func() (scanservice.EffectivePermissionExpander, error) {
-			expander, factoryErr := application.ad.NewEffectivePermissionExpander(
+			liveExpander, factoryErr := application.ad.NewEffectivePermissionExpander(
 				effectivePermissions.Server,
 				effectivePermissions.BaseDN,
 				effectivePermissions.Username,
@@ -130,10 +134,11 @@ func (application *application) handleScan(ctx *gin.Context) {
 				effectivePermissions.ExcludeGroupPatterns,
 				effectivePermissions.ExcludeUserPatterns,
 			)
-			if factoryErr != nil {
-				return nil, &effectivePermissionPreparationError{err: factoryErr}
-			}
-			return expander, nil
+			return identityresolution.NewService(database.DB, identityresolution.Options{
+				ConnectionID:    snapshotConnectionID,
+				LiveExpander:    liveExpander,
+				LiveUnavailable: factoryErr != nil,
+			}), nil
 		}
 	}
 
@@ -344,4 +349,32 @@ func shouldUseEffectivePermissionExpansion(request *EffectivePermissionRequest) 
 		strings.TrimSpace(request.BaseDN) != "" &&
 		strings.TrimSpace(request.Username) != "" &&
 		strings.TrimSpace(request.Password) != ""
+}
+
+func snapshotConnectionIDForRequest(request EffectivePermissionRequest) uuid.UUID {
+	if value := strings.TrimSpace(request.ConnectionID); value != "" {
+		if id, err := uuid.Parse(value); err == nil {
+			return id
+		}
+		return uuid.Nil
+	}
+	if !database.Ready() {
+		return uuid.Nil
+	}
+
+	server := strings.ToLower(strings.TrimSpace(request.Server))
+	baseDN := strings.ToLower(strings.TrimSpace(request.BaseDN))
+	if server == "" || baseDN == "" {
+		return uuid.Nil
+	}
+
+	var profiles []models.ADConnectionProfile
+	if err := database.DB.
+		Where("LOWER(server) = ? AND LOWER(base_dn) = ?", server, baseDN).
+		Limit(2).
+		Find(&profiles).Error; err != nil || len(profiles) != 1 {
+		return uuid.Nil
+	}
+
+	return profiles[0].ID
 }

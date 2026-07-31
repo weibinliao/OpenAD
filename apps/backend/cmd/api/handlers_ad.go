@@ -10,9 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/weibinliao/OpenAD/internal/ad"
-	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/gin-gonic/gin"
+	"github.com/weibinliao/OpenAD/internal/ad"
+	"github.com/weibinliao/OpenAD/internal/groupexport"
+	"github.com/weibinliao/OpenAD/internal/models"
 )
 
 var adJobSequence uint64
@@ -39,6 +40,17 @@ type ADGroupQueryRequest struct {
 type ADGroupMembersRequest struct {
 	ADCredentials
 	GroupDN string `json:"group_dn" binding:"required"`
+
+	IncludeNested        bool     `json:"include_nested"`
+	MaxDepth             int      `json:"max_depth"`
+	ExcludeGroupPatterns []string `json:"exclude_group_patterns"`
+	ExcludeUserPatterns  []string `json:"exclude_user_patterns"`
+}
+
+type ADGroupMembersExportRequest struct {
+	ADCredentials
+	GroupDN string `json:"group_dn" binding:"required"`
+	Format  string `json:"format"`
 
 	IncludeNested        bool     `json:"include_nested"`
 	MaxDepth             int      `json:"max_depth"`
@@ -449,6 +461,94 @@ func (application *application) handleADGroupMembers(context *gin.Context) {
 	}
 
 	context.JSON(http.StatusOK, response)
+}
+
+func (application *application) handleADGroupMembersExport(context *gin.Context) {
+	var request ADGroupMembersExportRequest
+	if !bindExportJSON(context, &request, 1<<20) {
+		return
+	}
+	if err := request.resolveInto(); err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	client, err := application.ad.NewGroupClient(request.Server, request.BaseDN, request.Username, request.Password)
+	if err != nil {
+		context.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to connect to Active Directory: %v", err)})
+		return
+	}
+	defer client.Close()
+
+	group, err := client.GetGroup(context.Request.Context(), request.GroupDN)
+	if err != nil {
+		context.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to query Active Directory group members: %v", err)})
+		return
+	}
+	if group == nil {
+		context.JSON(http.StatusNotFound, gin.H{"error": "Active Directory group not found"})
+		return
+	}
+
+	rows := groupexport.RowsFromDirectMembers(*group)
+	if request.IncludeNested {
+		resolverOptions := make([]ad.GroupResolverOption, 0, 2)
+		if request.MaxDepth > 0 {
+			resolverOptions = append(resolverOptions, ad.WithMaxDepth(request.MaxDepth))
+		}
+		if len(request.ExcludeGroupPatterns) > 0 || len(request.ExcludeUserPatterns) > 0 {
+			filter := ad.NewExclusionFilter()
+			for _, pattern := range request.ExcludeGroupPatterns {
+				if trimmed := strings.TrimSpace(pattern); trimmed != "" {
+					filter.AddGroupPattern(trimmed)
+				}
+			}
+			for _, pattern := range request.ExcludeUserPatterns {
+				if trimmed := strings.TrimSpace(pattern); trimmed != "" {
+					filter.AddUserPattern(trimmed)
+				}
+			}
+			resolverOptions = append(resolverOptions, ad.WithExclusionFilter(filter))
+		}
+
+		resolution, resolveErr := ad.NewGroupResolver(client, resolverOptions...).ResolveGroupMembers(context.Request.Context(), request.GroupDN)
+		if resolveErr != nil {
+			context.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to resolve nested group members: %v", resolveErr)})
+			return
+		}
+		rows = groupexport.RowsFromResolution(*group, *resolution)
+	}
+
+	format := strings.ToLower(strings.TrimSpace(request.Format))
+	if format == "" || format == "xlsx" {
+		format = "excel"
+	}
+	exporter := groupexport.NewExporter()
+	var data []byte
+	var extension, contentType string
+	switch format {
+	case "excel":
+		data, err = exporter.XLSX(*group, rows)
+		extension, contentType = "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case "csv":
+		data, err = exporter.CSV(*group, rows)
+		extension, contentType = "csv", "text/csv; charset=utf-8"
+	default:
+		context.JSON(http.StatusBadRequest, gin.H{"error": "unsupported format"})
+		return
+	}
+	if err != nil {
+		context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	baseName := strings.TrimSpace(group.Name)
+	if baseName == "" {
+		baseName = "group"
+	}
+	filename := sanitizeExportFilename(baseName+"-members", extension)
+	context.Header("Content-Disposition", exportContentDisposition(filename))
+	context.Data(http.StatusOK, contentType, data)
 }
 
 func (application *application) handleADPrincipalExpand(context *gin.Context) {

@@ -28,6 +28,7 @@ import (
 	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/weibinliao/OpenAD/internal/scanner"
 	"github.com/weibinliao/OpenAD/internal/scanservice"
+	"github.com/xuri/excelize/v2"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -376,6 +377,26 @@ func TestScanEndpointForwardsEffectivePermissionExpansionRequest(t *testing.T) {
 	assert.Equal(t, http.StatusOK, recorder.StatusCode)
 	assert.True(t, expander.called)
 	assert.Len(t, expander.lastPermissions, 1)
+}
+
+func TestSnapshotConnectionIDForRequestMatchesUniqueInlineProfile(t *testing.T) {
+	db := withAccessTestDatabase(t)
+	require.NoError(t, db.AutoMigrate(&models.ADConnectionProfile{}))
+	profile := models.ADConnectionProfile{
+		Name:              "Primary",
+		Server:            "ldaps://dc01.corp.test:636",
+		BaseDN:            "DC=corp,DC=test",
+		BindUser:          "svc-reader",
+		EncryptedPassword: "encrypted",
+	}
+	require.NoError(t, db.Create(&profile).Error)
+
+	connectionID := snapshotConnectionIDForRequest(EffectivePermissionRequest{
+		Server: "LDAPS://DC01.CORP.TEST:636",
+		BaseDN: "dc=corp,dc=test",
+	})
+
+	assert.Equal(t, profile.ID, connectionID)
 }
 
 func TestScanEndpointUsesEffectivePermissionExpansionWhenCredentialsArePresent(t *testing.T) {
@@ -1100,6 +1121,47 @@ func uuidMust(t *testing.T, value string) uuid.UUID {
 	require.NoError(t, err)
 
 	return parsed
+}
+
+func TestADGroupMembersExportDefaultsToExcel(t *testing.T) {
+	group := &models.ADGroup{
+		Name: "Finance", DN: "CN=Finance,DC=corp,DC=test",
+		Members: []models.ADPrincipal{{Name: "Alice", SAMAccountName: "alice", SID: "S-1-a", Type: models.ADObjectTypeUser}},
+	}
+	router := newTestRouter(applicationDependencies{ad: &stubADService{groupClient: &stubADGroupClient{group: group}}})
+
+	recorder := performJSONRequestToRouter(t, router, "/api/ad/groups/members/export", ADGroupMembersExportRequest{
+		ADCredentials: ADCredentials{Server: "ldap://dc", BaseDN: "DC=corp,DC=test", Username: "reader", Password: "secret"},
+		GroupDN:       group.DN,
+	})
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", recorder.Header().Get("Content-Type"))
+	assert.Contains(t, recorder.Header().Get("Content-Disposition"), "Finance-members.xlsx")
+	book, err := excelize.OpenReader(bytes.NewReader(recorder.Body.Bytes()))
+	require.NoError(t, err)
+	defer book.Close()
+	assert.Equal(t, "Members", book.GetSheetName(0))
+}
+
+func TestADGroupMembersExportSupportsCSV(t *testing.T) {
+	group := &models.ADGroup{
+		Name: "Finance", DN: "CN=Finance,DC=corp,DC=test",
+		Members: []models.ADPrincipal{{Name: "Alice", SAMAccountName: "alice", SID: "S-1-a", Type: models.ADObjectTypeUser}},
+	}
+	router := newTestRouter(applicationDependencies{ad: &stubADService{groupClient: &stubADGroupClient{group: group}}})
+
+	recorder := performJSONRequestToRouter(t, router, "/api/ad/groups/members/export", ADGroupMembersExportRequest{
+		ADCredentials: ADCredentials{Server: "ldap://dc", BaseDN: "DC=corp,DC=test", Username: "reader", Password: "secret"},
+		GroupDN:       group.DN,
+		Format:        "csv",
+	})
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "text/csv; charset=utf-8", recorder.Header().Get("Content-Type"))
+	require.GreaterOrEqual(t, recorder.Body.Len(), 3)
+	assert.Equal(t, []byte{0xEF, 0xBB, 0xBF}, recorder.Body.Bytes()[:3])
+	assert.Contains(t, recorder.Body.String(), "alice")
 }
 
 type stubScanRunner struct {

@@ -186,6 +186,84 @@ func TestRunExpandsEffectivePermissionsWhenConfigured(t *testing.T) {
 	assert.Equal(t, 1, response.PermissionCount)
 }
 
+func TestRunFallsBackToRawPermissionsWhenExpanderFails(t *testing.T) {
+	originalSID := "S-1-5-21-1-2-3-1001"
+	repository := &stubSessionRepository{}
+	service := NewWithDependencies(&stubDirectoryScanner{result: &scanner.Result{
+		RootPath:     `C:\Finance`,
+		ItemsScanned: 1,
+		Permissions: []scanner.Permission{{
+			Path:       `C:\Finance`,
+			Trustee:    originalSID,
+			TrusteeSID: originalSID,
+			Rights:     "Read",
+			Type:       "Allow",
+		}},
+	}}, repository)
+
+	response, err := service.Run(Request{
+		Path:                        `C:\Finance`,
+		Context:                     context.Background(),
+		EffectivePermissionExpander: &stubEffectivePermissionExpander{err: errors.New("ldap unavailable")},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	require.Len(t, response.Permissions, 1)
+	assert.Equal(t, originalSID, response.Permissions[0].TrusteeSID)
+	assert.Equal(t, "raw", response.Permissions[0].ResolutionSource)
+	assert.Equal(t, "resolver_error", response.Permissions[0].ResolutionReason)
+	assert.Equal(t, "raw-fallback", response.IdentityResolution.Mode)
+	assert.Equal(t, 1, response.IdentityResolution.UnresolvedPrincipalCount)
+	assert.Equal(t, 1, repository.completeCalls)
+	assert.Equal(t, 0, repository.failedCalls)
+}
+
+func TestRunFallsBackToRawPermissionsWhenExpanderReturnsEmptyResult(t *testing.T) {
+	originalSID := "S-1-5-21-1-2-3-1001"
+	repository := &stubSessionRepository{}
+	service := NewWithDependencies(&stubDirectoryScanner{result: &scanner.Result{
+		RootPath:     `C:\Finance`,
+		ItemsScanned: 1,
+		Permissions:  []scanner.Permission{{Path: `C:\Finance`, Trustee: originalSID, TrusteeSID: originalSID}},
+	}}, repository)
+
+	response, err := service.Run(Request{
+		Path:                        `C:\Finance`,
+		EffectivePermissionExpander: &stubEffectivePermissionExpander{expanded: []scanner.Permission{}},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, response.Permissions, 1)
+	assert.Equal(t, originalSID, response.Permissions[0].TrusteeSID)
+	assert.Equal(t, "empty_result", response.Permissions[0].ResolutionReason)
+	assert.Equal(t, "raw-fallback", response.IdentityResolution.Mode)
+	assert.Equal(t, 1, repository.completeCalls)
+	assert.Equal(t, 0, repository.failedCalls)
+}
+
+func TestRunFallsBackToRawPermissionsWhenExpanderFactoryFails(t *testing.T) {
+	repository := &stubSessionRepository{}
+	service := NewWithDependencies(&stubDirectoryScanner{result: &scanner.Result{
+		RootPath:     `C:\Finance`,
+		ItemsScanned: 1,
+		Permissions:  []scanner.Permission{{Path: `C:\Finance`, Trustee: "S-1-1-0", TrusteeSID: "S-1-1-0"}},
+	}}, repository)
+
+	response, err := service.Run(Request{
+		Path: `C:\Finance`,
+		EffectivePermissionExpanderFactory: func() (EffectivePermissionExpander, error) {
+			return nil, errors.New("cannot connect")
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, response.Permissions, 1)
+	assert.Equal(t, "raw-fallback", response.IdentityResolution.Mode)
+	assert.Equal(t, 1, repository.completeCalls)
+	assert.Equal(t, 0, repository.failedCalls)
+}
+
 func TestRunMarksSessionFailedWhenScannerReturnsError(t *testing.T) {
 	scanErr := errors.New("scanner unavailable")
 	repository := &stubSessionRepository{}

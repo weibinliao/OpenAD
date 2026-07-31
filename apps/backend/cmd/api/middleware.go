@@ -484,6 +484,7 @@ func endpointProtectionMiddleware() gin.HandlerFunc {
 		"/api/ad/users/query/async":          {},
 		"/api/ad/groups/query":               {},
 		"/api/ad/groups/members":             {},
+		"/api/ad/groups/members/export":      {},
 		"/api/ad/tree":                       {},
 		"/api/ad/tree/explain":               {},
 		"/api/ad/jobs/:id/retry":             {},

@@ -6,6 +6,7 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
+  Download,
   FileCog,
   FolderTree,
   GitFork,
@@ -32,6 +33,12 @@ import { useI18n } from '../contexts/I18nContext';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader } from './ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { EmptyState } from './ui/empty-state';
 import { Input } from './ui/input';
 import { Skeleton } from './ui/skeleton';
@@ -107,6 +114,9 @@ const copy = {
     directGroups: 'Direct AD groups',
     directGroupCount: (count: number) => `${count} direct ${count === 1 ? 'group' : 'groups'}`,
     groupMembers: 'Group members',
+    exportExcel: 'Export Excel',
+    exportCSV: 'Export CSV',
+    exportFormats: 'More export formats',
     memberCount: (count: number) => `${count} ${count === 1 ? 'member' : 'members'}`,
     analyzeAccess: 'Analyze access',
     structuralHint: 'This structural directory object organizes the tree. Expand it to inspect loaded children.',
@@ -147,6 +157,9 @@ const copy = {
     groupMembers: '组成员',
     memberCount: (count: number) => `${count} 个成员`,
     analyzeAccess: '分析访问权限',
+    exportExcel: '导出 Excel',
+    exportCSV: '导出 CSV',
+    exportFormats: '更多导出格式',
     structuralHint: '这是用于组织目录树的结构对象。展开它可以继续查看已加载的子对象。',
     clearSelection: '清除选择',
     loadingDetails: '正在加载目录详情',
@@ -168,6 +181,22 @@ function selectedDN(selected: SelectedObject | null) {
   if (selected.kind === 'group') return selected.group.dn;
   return selected.node.dn;
 }
+
+function exportFilename(response: Response, fallback: string) {
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const encodedMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encodedMatch) {
+    try {
+      return decodeURIComponent(encodedMatch[1].replace(/^"|"$/g, ''));
+    } catch {
+      // Fall through to the plain filename when the server value is malformed.
+    }
+  }
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+  return plainMatch?.[1] || fallback;
+}
+
+type GroupExportFormat = 'excel' | 'csv';
 
 export default function DirectoryExplorerWorkbench({
   connectionId,
@@ -192,6 +221,7 @@ export default function DirectoryExplorerWorkbench({
   const [detailError, setDetailError] = useState('');
   const [includeNested, setIncludeNested] = useState(true);
   const [groupData, setGroupData] = useState<GroupMembersData | null>(null);
+  const [exporting, setExporting] = useState<GroupExportFormat | ''>('');
   const searchSequence = useRef(0);
   const detailSequence = useRef(0);
   const lastExternalSearch = useRef('');
@@ -519,6 +549,49 @@ export default function DirectoryExplorerWorkbench({
       : [];
   }, [groupData, includeNested]);
 
+  const exportGroupMembers = useCallback(async (format: GroupExportFormat) => {
+    if (selected?.kind !== 'group' || exporting) return;
+    setExporting(format);
+    setDetailError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/ad/groups/members/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connection_id: connectionId,
+          group_dn: selected.group.dn,
+          include_nested: includeNested,
+          max_depth: 10,
+          format,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Unable to export group members.');
+      }
+
+      const blob = await response.blob();
+      const objectURL = URL.createObjectURL(blob);
+      try {
+        const anchor = document.createElement('a');
+        anchor.href = objectURL;
+        anchor.download = exportFilename(
+          response,
+          `${directoryGroupName(selected.group)}-members.${format === 'csv' ? 'csv' : 'xlsx'}`,
+        );
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } finally {
+        URL.revokeObjectURL(objectURL);
+      }
+    } catch (exportError) {
+      setDetailError(exportError instanceof Error ? exportError.message : String(exportError));
+    } finally {
+      setExporting('');
+    }
+  }, [connectionId, exporting, includeNested, selected]);
+
   return (
     <Card className="overflow-hidden">
       <div className="grid min-h-[600px] lg:grid-cols-[minmax(300px,0.9fr)_minmax(420px,1.1fr)] xl:grid-cols-[minmax(280px,0.78fr)_minmax(300px,0.86fr)_minmax(360px,1.08fr)]">
@@ -713,7 +786,9 @@ export default function DirectoryExplorerWorkbench({
                 members={members}
                 loading={detailLoading}
                 includeNested={includeNested}
+                exporting={exporting}
                 onIncludeNestedChange={setIncludeNested}
+                onExport={exportGroupMembers}
               />
             ) : selected?.kind === 'node' ? (
               <NodeInspector labels={labels} node={selected.node} />
@@ -817,14 +892,18 @@ function GroupInspector({
   members,
   loading,
   includeNested,
+  exporting,
   onIncludeNestedChange,
+  onExport,
 }: {
   labels: typeof copy.en | typeof copy['zh-CN'];
   group: DirectoryGroup;
   members: Member[];
   loading: boolean;
   includeNested: boolean;
+  exporting: GroupExportFormat | '';
   onIncludeNestedChange: (value: boolean) => void;
+  onExport: (format: GroupExportFormat) => Promise<void>;
 }) {
   return (
     <div className="space-y-5">
@@ -848,27 +927,55 @@ function GroupInspector({
             <h4 className="text-xs font-semibold text-fg">{labels.groupMembers}</h4>
             <Badge tone="neutral">{labels.memberCount(members.length)}</Badge>
           </div>
-          <div className="inline-flex rounded-md bg-surface-sunken p-1">
-            <button
-              type="button"
-              className={cn(
-                'rounded px-2.5 py-1 text-2xs text-fg-muted',
-                !includeNested && 'bg-surface-base text-fg shadow-token-sm',
-              )}
-              onClick={() => onIncludeNestedChange(false)}
-            >
-              {labels.direct}
-            </button>
-            <button
-              type="button"
-              className={cn(
-                'rounded px-2.5 py-1 text-2xs text-fg-muted',
-                includeNested && 'bg-surface-base text-fg shadow-token-sm',
-              )}
-              onClick={() => onIncludeNestedChange(true)}
-            >
-              {labels.nested}
-            </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="inline-flex rounded-md bg-surface-sunken p-1">
+              <button
+                type="button"
+                className={cn(
+                  'rounded px-2.5 py-1 text-2xs text-fg-muted',
+                  !includeNested && 'bg-surface-base text-fg shadow-token-sm',
+                )}
+                onClick={() => onIncludeNestedChange(false)}
+              >
+                {labels.direct}
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  'rounded px-2.5 py-1 text-2xs text-fg-muted',
+                  includeNested && 'bg-surface-base text-fg shadow-token-sm',
+                )}
+                onClick={() => onIncludeNestedChange(true)}
+              >
+                {labels.nested}
+              </button>
+            </div>
+            <div className="inline-flex">
+              <Button
+                type="button"
+                size="sm"
+                className="rounded-r-none"
+                loading={exporting === 'excel'}
+                disabled={loading || Boolean(exporting)}
+                onClick={() => void onExport('excel')}
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden />
+                {labels.exportExcel}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" size="sm" className="rounded-l-none border-l border-accent-hover px-2" disabled={loading || Boolean(exporting)} aria-label={labels.exportFormats} title={labels.exportFormats}>
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem disabled={loading || Boolean(exporting)} onSelect={() => void onExport('csv')}>
+                    <Download className="h-3.5 w-3.5" aria-hidden />
+                    {labels.exportCSV}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
         {loading ? (

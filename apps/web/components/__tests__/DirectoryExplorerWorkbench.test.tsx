@@ -47,6 +47,14 @@ describe('DirectoryExplorerWorkbench', () => {
           },
         });
       }
+      if (url.endsWith('/api/ad/groups/members/export')) {
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ 'Content-Disposition': 'attachment; filename="Domain-Admins-members.xlsx"' }),
+          blob: async () => new Blob(['xlsx']),
+          json: async () => ({}),
+        } as Response);
+      }
       return response({});
     }) as jest.MockedFunction<typeof fetch>;
   });
@@ -128,6 +136,25 @@ describe('DirectoryExplorerWorkbench', () => {
     expect(await screen.findByRole('heading', { name: 'Domain Admins' })).toBeInTheDocument();
     expect(await screen.findByText('Bob Chen')).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/ad/groups/members'), expect.objectContaining({ method: 'POST' }));
+  });
+
+  test('exports the selected group to Excel by default with the current nested scope', async () => {
+    Object.defineProperty(window.URL, 'createObjectURL', { configurable: true, value: jest.fn(() => 'blob:group') });
+    Object.defineProperty(window.URL, 'revokeObjectURL', { configurable: true, value: jest.fn() });
+    jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<I18nProvider><DirectoryExplorerWorkbench connectionId="profile-1" /></I18nProvider>);
+
+    fireEvent.click(await screen.findByText('Domain Admins'));
+    await screen.findByText('Bob Chen');
+    fireEvent.click(screen.getByRole('button', { name: 'Export Excel' }));
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/ad/groups/members/export'),
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"include_nested":true'),
+      }),
+    ));
   });
 
   test('automatically suggests directory objects while typing and selects a suggestion', async () => {
