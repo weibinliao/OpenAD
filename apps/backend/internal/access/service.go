@@ -16,8 +16,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/google/uuid"
+	"github.com/weibinliao/OpenAD/internal/models"
 	"gorm.io/gorm"
 )
 
@@ -355,17 +355,18 @@ type ByResourceInput struct {
 
 // ResourcePrincipal is one principal that can touch the resource.
 type ResourcePrincipal struct {
-	SID       string   `json:"sid"`
-	Name      string   `json:"name"`
-	Source    string   `json:"source"` // user | group-member | unresolved
-	Rights    []string `json:"rights"`
-	Types     []string `json:"types"` // allow / deny seen for this principal
-	RiskLevel string   `json:"risk_level,omitempty"`
-	GroupName string   `json:"group_name,omitempty"`
-	GroupSID  string   `json:"group_sid,omitempty"`
-	ViaChain  string   `json:"via_chain,omitempty"`
-	Paths     []string `json:"paths"`
-	Enabled   *bool    `json:"enabled,omitempty"`
+	SID         string   `json:"sid"`
+	Name        string   `json:"name"`
+	Source      string   `json:"source"` // group | user | group-member | unresolved
+	Rights      []string `json:"rights"`
+	Types       []string `json:"types"` // allow / deny seen for this principal
+	RiskLevel   string   `json:"risk_level,omitempty"`
+	GroupName   string   `json:"group_name,omitempty"`
+	GroupSID    string   `json:"group_sid,omitempty"`
+	ViaChain    string   `json:"via_chain,omitempty"`
+	Paths       []string `json:"paths"`
+	Enabled     *bool    `json:"enabled,omitempty"`
+	MemberCount int      `json:"member_count,omitempty"`
 }
 
 // ResourceACE is one raw permission row under the path prefix.
@@ -393,6 +394,7 @@ type ByResourceResult struct {
 type ByResourceCounts struct {
 	ACEs       int `json:"aces"`
 	Principals int `json:"principals"`
+	Groups     int `json:"groups"`
 	Users      int `json:"users"`
 	ViaGroups  int `json:"via_groups"`
 	Unresolved int `json:"unresolved"`
@@ -431,19 +433,29 @@ func (service *Service) ByResource(input ByResourceInput) (*ByResourceResult, er
 	// Classify every distinct trustee against the snapshot.
 	trusteeSIDs := make([]string, 0, len(permissions))
 	seenTrustees := make(map[string]struct{}, len(permissions))
+	sourceGroupNames := make([]string, 0)
+	seenSourceGroups := make(map[string]struct{})
 	for _, permission := range permissions {
 		if _, seen := seenTrustees[permission.TrusteeSID]; seen {
-			continue
+			// The same trustee can appear through multiple source groups, so
+			// group-name collection must continue below.
+		} else {
+			seenTrustees[permission.TrusteeSID] = struct{}{}
+			trusteeSIDs = append(trusteeSIDs, permission.TrusteeSID)
 		}
-		seenTrustees[permission.TrusteeSID] = struct{}{}
-		trusteeSIDs = append(trusteeSIDs, permission.TrusteeSID)
+		if groupName := normalizeResourceGroupName(permission.OriginatingGroup); groupName != "" {
+			if _, seen := seenSourceGroups[groupName]; !seen {
+				seenSourceGroups[groupName] = struct{}{}
+				sourceGroupNames = append(sourceGroupNames, groupName)
+			}
+		}
 	}
 
 	usersBySID, err := service.usersBySID(run.ID, trusteeSIDs)
 	if err != nil {
 		return nil, err
 	}
-	groupsBySID, err := service.groupsBySID(run.ID, trusteeSIDs)
+	groupsBySID, groupsByName, err := service.resourceGroups(run.ID, trusteeSIDs, sourceGroupNames)
 	if err != nil {
 		return nil, err
 	}
@@ -459,8 +471,10 @@ func (service *Service) ByResource(input ByResourceInput) (*ByResourceResult, er
 	// Aggregate principals keyed by (sid, source, via-group) so one user
 	// reached both directly and through a group keeps both explanations.
 	principalIndex := make(map[string]int)
+	groupMembers := make(map[string]map[string]struct{})
+	groupKeys := make(map[string]string)
 	addPrincipal := func(candidate ResourcePrincipal, right, aceType, risk, path string) {
-		key := candidate.SID + "|" + candidate.Source + "|" + candidate.GroupSID
+		key := resourcePrincipalKey(candidate)
 		index, found := principalIndex[key]
 		if !found {
 			index = len(result.Principals)
@@ -472,6 +486,72 @@ func (service *Service) ByResource(input ByResourceInput) (*ByResourceResult, er
 		principal.Types = appendUnique(principal.Types, strings.ToLower(aceType))
 		principal.Paths = appendUnique(principal.Paths, path)
 		principal.RiskLevel = highestRisk(principal.RiskLevel, risk)
+	}
+	addGroup := func(group models.ADGroupRecord, fallbackName string, permission models.Permission) string {
+		name := strings.TrimSpace(group.Name)
+		if name == "" {
+			name = strings.TrimSpace(fallbackName)
+		}
+		groupKey := resourceGroupKey(group.SID, name)
+		addPrincipal(ResourcePrincipal{
+			SID:       strings.TrimSpace(group.SID),
+			Name:      name,
+			Source:    "group",
+			GroupName: name,
+			GroupSID:  strings.TrimSpace(group.SID),
+		}, permission.Rights, permission.Type, permission.RiskLevel, permission.Path)
+		groupKeys[groupKey] = resourcePrincipalKey(ResourcePrincipal{
+			SID:       strings.TrimSpace(group.SID),
+			Name:      name,
+			Source:    "group",
+			GroupName: name,
+			GroupSID:  strings.TrimSpace(group.SID),
+		})
+		if _, found := groupMembers[groupKey]; !found {
+			groupMembers[groupKey] = make(map[string]struct{})
+		}
+		return groupKey
+	}
+	addGroupMember := func(group models.ADGroupRecord, fallbackName string, permission models.Permission, user models.ADUserRecord, viaChain string) {
+		groupKey := addGroup(group, fallbackName, permission)
+		enabled := user.Enabled
+		groupName := strings.TrimSpace(group.Name)
+		if groupName == "" {
+			groupName = strings.TrimSpace(fallbackName)
+		}
+		addPrincipal(ResourcePrincipal{
+			SID:       user.SID,
+			Name:      displayName(user),
+			Source:    "group-member",
+			GroupName: groupName,
+			GroupSID:  strings.TrimSpace(group.SID),
+			ViaChain:  strings.TrimSpace(viaChain),
+			Enabled:   &enabled,
+		}, permission.Rights, permission.Type, permission.RiskLevel, permission.Path)
+		groupMembers[groupKey][strings.ToUpper(strings.TrimSpace(user.SID))] = struct{}{}
+	}
+	addPermissionGroupMember := func(group models.ADGroupRecord, fallbackName string, permission models.Permission) {
+		groupKey := addGroup(group, fallbackName, permission)
+		groupName := strings.TrimSpace(group.Name)
+		if groupName == "" {
+			groupName = strings.TrimSpace(fallbackName)
+		}
+		memberName := strings.TrimSpace(permission.Trustee)
+		if memberName == "" {
+			memberName = strings.TrimSpace(permission.AccountName)
+		}
+		if memberName == "" {
+			memberName = strings.TrimSpace(permission.TrusteeSID)
+		}
+		addPrincipal(ResourcePrincipal{
+			SID:       permission.TrusteeSID,
+			Name:      memberName,
+			Source:    "group-member",
+			GroupName: groupName,
+			GroupSID:  strings.TrimSpace(group.SID),
+			ViaChain:  strings.TrimSpace(permission.GroupInheritanceHierarchy),
+		}, permission.Rights, permission.Type, permission.RiskLevel, permission.Path)
+		groupMembers[groupKey][strings.ToUpper(strings.TrimSpace(permission.TrusteeSID))] = struct{}{}
 	}
 
 	for _, permission := range permissions {
@@ -485,23 +565,25 @@ func (service *Service) ByResource(input ByResourceInput) (*ByResourceResult, er
 			RiskLevel:  permission.RiskLevel,
 		})
 
-		if group, isGroup := groupsBySID[permission.TrusteeSID]; isGroup {
+		if sourceGroup := strings.TrimSpace(permission.OriginatingGroup); sourceGroup != "" {
+			group := groupRecordForName(groupsByName, sourceGroup)
+			if user, isUser := usersBySID[permission.TrusteeSID]; isUser {
+				addGroupMember(group, sourceGroup, permission, user, permission.GroupInheritanceHierarchy)
+			} else {
+				addPermissionGroupMember(group, sourceGroup, permission)
+			}
+			continue
+		}
+
+		if group, isGroup := groupsBySID[strings.ToUpper(strings.TrimSpace(permission.TrusteeSID))]; isGroup {
+			addGroup(group, group.Name, permission)
 			// Expand the group into its (flattened) member users.
 			members, err := service.groupMemberUsers(run.ID, group.SID)
 			if err != nil {
 				return nil, err
 			}
 			for _, member := range members {
-				enabled := member.user.Enabled
-				addPrincipal(ResourcePrincipal{
-					SID:       member.user.SID,
-					Name:      displayName(member.user),
-					Source:    "group-member",
-					GroupName: group.Name,
-					GroupSID:  group.SID,
-					ViaChain:  member.viaChain,
-					Enabled:   &enabled,
-				}, permission.Rights, permission.Type, permission.RiskLevel, permission.Path)
+				addGroupMember(group, group.Name, permission, member.user, member.viaChain)
 			}
 			continue
 		}
@@ -526,10 +608,19 @@ func (service *Service) ByResource(input ByResourceInput) (*ByResourceResult, er
 		}, permission.Rights, permission.Type, permission.RiskLevel, permission.Path)
 	}
 
+	for groupKey, principalKey := range groupKeys {
+		if index, found := principalIndex[principalKey]; found {
+			result.Principals[index].MemberCount = len(groupMembers[groupKey])
+		}
+	}
+	result.Principals = sortResourcePrincipals(result.Principals)
+
 	result.Counts.ACEs = len(result.ACEs)
 	result.Counts.Principals = len(result.Principals)
 	for _, principal := range result.Principals {
 		switch principal.Source {
+		case "group":
+			result.Counts.Groups++
 		case "user":
 			result.Counts.Users++
 		case "group-member":
@@ -699,23 +790,49 @@ func (service *Service) usersBySID(runID uuid.UUID, sids []string) (map[string]m
 	return users, nil
 }
 
-func (service *Service) groupsBySID(runID uuid.UUID, sids []string) (map[string]models.ADGroupRecord, error) {
-	groups := make(map[string]models.ADGroupRecord, len(sids))
-	if len(sids) == 0 {
-		return groups, nil
+func (service *Service) resourceGroups(runID uuid.UUID, sids, names []string) (map[string]models.ADGroupRecord, map[string]models.ADGroupRecord, error) {
+	groupsBySID := make(map[string]models.ADGroupRecord, len(sids))
+	groupsByName := make(map[string]models.ADGroupRecord, len(names))
+	if len(sids) == 0 && len(names) == 0 {
+		return groupsBySID, groupsByName, nil
 	}
 
 	var records []models.ADGroupRecord
-	err := service.db.
-		Where("run_id = ? AND sid IN ?", runID, sids).
-		Find(&records).Error
+	query := service.db.Where("run_id = ?", runID)
+	if len(sids) > 0 && len(names) > 0 {
+		query = query.Where("sid IN ? OR LOWER(name) IN ?", sids, names)
+	} else if len(sids) > 0 {
+		query = query.Where("sid IN ?", sids)
+	} else {
+		query = query.Where("LOWER(name) IN ?", names)
+	}
+	err := query.Find(&records).Error
 	if err != nil {
-		return nil, fmt.Errorf("load groups: %w", err)
+		return nil, nil, fmt.Errorf("load groups: %w", err)
 	}
+
+	ambiguousNames := make(map[string]struct{})
 	for _, record := range records {
-		groups[record.SID] = record
+		groupsBySID[strings.ToUpper(strings.TrimSpace(record.SID))] = record
+		nameKey := normalizeResourceGroupName(record.Name)
+		if nameKey == "" {
+			continue
+		}
+		if _, ambiguous := ambiguousNames[nameKey]; ambiguous {
+			continue
+		}
+		if existing, found := groupsByName[nameKey]; found && !strings.EqualFold(existing.SID, record.SID) {
+			delete(groupsByName, nameKey)
+			ambiguousNames[nameKey] = struct{}{}
+			continue
+		}
+		groupsByName[nameKey] = record
 	}
-	return groups, nil
+	return groupsBySID, groupsByName, nil
+}
+
+func groupRecordForName(groupsByName map[string]models.ADGroupRecord, name string) models.ADGroupRecord {
+	return groupsByName[normalizeResourceGroupName(name)]
 }
 
 type memberUser struct {
@@ -788,6 +905,105 @@ func friendlyUnresolvedName(sid, scannedTrustee string) string {
 		return scannedTrustee
 	}
 	return sid
+}
+
+func normalizeResourceGroupName(value string) string {
+	value = strings.TrimSpace(value)
+	if index := strings.LastIndexAny(value, `\/`); index >= 0 {
+		value = value[index+1:]
+	}
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func resourceGroupKey(sid, name string) string {
+	if sid = strings.ToUpper(strings.TrimSpace(sid)); sid != "" {
+		return "sid:" + sid
+	}
+	return "name:" + normalizeResourceGroupName(name)
+}
+
+func resourcePrincipalKey(principal ResourcePrincipal) string {
+	identity := strings.ToUpper(strings.TrimSpace(principal.SID))
+	if identity == "" {
+		identity = strings.ToLower(strings.TrimSpace(principal.Name))
+	}
+	switch principal.Source {
+	case "group":
+		return "group|" + resourceGroupKey(principal.SID, principal.Name)
+	case "group-member":
+		return "group-member|" + resourceGroupKey(principal.GroupSID, principal.GroupName) + "|" + identity
+	default:
+		return principal.Source + "|" + identity
+	}
+}
+
+func sortResourcePrincipals(principals []ResourcePrincipal) []ResourcePrincipal {
+	groups := make([]ResourcePrincipal, 0)
+	membersByGroup := make(map[string][]ResourcePrincipal)
+	directUsers := make([]ResourcePrincipal, 0)
+	unresolved := make([]ResourcePrincipal, 0)
+
+	for _, principal := range principals {
+		switch principal.Source {
+		case "group":
+			groups = append(groups, principal)
+		case "group-member":
+			key := resourceGroupKey(principal.GroupSID, principal.GroupName)
+			membersByGroup[key] = append(membersByGroup[key], principal)
+		case "user":
+			directUsers = append(directUsers, principal)
+		default:
+			unresolved = append(unresolved, principal)
+		}
+	}
+
+	sort.SliceStable(groups, func(left, right int) bool {
+		return resourcePrincipalLess(groups[left], groups[right])
+	})
+	for key := range membersByGroup {
+		sort.SliceStable(membersByGroup[key], func(left, right int) bool {
+			return resourcePrincipalLess(membersByGroup[key][left], membersByGroup[key][right])
+		})
+	}
+	sort.SliceStable(directUsers, func(left, right int) bool {
+		return resourcePrincipalLess(directUsers[left], directUsers[right])
+	})
+	sort.SliceStable(unresolved, func(left, right int) bool {
+		return resourcePrincipalLess(unresolved[left], unresolved[right])
+	})
+
+	result := make([]ResourcePrincipal, 0, len(principals))
+	for _, group := range groups {
+		result = append(result, group)
+		key := resourceGroupKey(group.SID, group.Name)
+		result = append(result, membersByGroup[key]...)
+		delete(membersByGroup, key)
+	}
+
+	// Defensive fallback for historical rows whose group identity could not
+	// be matched to a parent. The normal classification path always creates
+	// the parent first, but never drop members if legacy evidence is malformed.
+	orphanKeys := make([]string, 0, len(membersByGroup))
+	for key := range membersByGroup {
+		orphanKeys = append(orphanKeys, key)
+	}
+	sort.Strings(orphanKeys)
+	for _, key := range orphanKeys {
+		result = append(result, membersByGroup[key]...)
+	}
+
+	result = append(result, directUsers...)
+	result = append(result, unresolved...)
+	return result
+}
+
+func resourcePrincipalLess(left, right ResourcePrincipal) bool {
+	leftName := strings.ToLower(strings.TrimSpace(left.Name))
+	rightName := strings.ToLower(strings.TrimSpace(right.Name))
+	if leftName != rightName {
+		return leftName < rightName
+	}
+	return strings.ToUpper(strings.TrimSpace(left.SID)) < strings.ToUpper(strings.TrimSpace(right.SID))
 }
 
 var riskRank = map[string]int{"": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}

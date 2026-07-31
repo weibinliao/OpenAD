@@ -1068,7 +1068,23 @@ interface ResourcePrincipalLite {
   types: string[];
   risk_level?: string;
   group_name?: string;
+  group_sid?: string;
   via_chain?: string;
+  member_count?: number;
+}
+
+function resourcePrincipalGroupKey(principal: ResourcePrincipalLite) {
+  return (principal.group_sid || (principal.source === 'group' ? principal.sid : '') || principal.group_name || principal.name)
+    .trim()
+    .toLowerCase();
+}
+
+function resourcePrincipalMatches(principal: ResourcePrincipalLite, term: string) {
+  return (
+    principal.name.toLowerCase().includes(term) ||
+    principal.sid.toLowerCase().includes(term) ||
+    (principal.group_name || '').toLowerCase().includes(term)
+  );
 }
 
 function ResourceAnswer({ node }: { node: ExplorerNode }) {
@@ -1079,6 +1095,7 @@ function ResourceAnswer({ node }: { node: ExplorerNode }) {
   const [needSync, setNeedSync] = useState(false);
   const [filter, setFilter] = useState('');
   const [error, setError] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -1123,12 +1140,49 @@ function ResourceAnswer({ node }: { node: ExplorerNode }) {
     if (!principals) return null;
     const term = filter.trim().toLowerCase();
     if (!term) return principals;
-    return principals.filter(
-      (principal) =>
-        principal.name.toLowerCase().includes(term) ||
-        (principal.group_name || '').toLowerCase().includes(term),
-    );
+
+    const matchingGroups = new Set<string>();
+    const groupsWithMatchingMembers = new Set<string>();
+    for (const principal of principals) {
+      if (principal.source === 'group' && resourcePrincipalMatches(principal, term)) {
+        matchingGroups.add(resourcePrincipalGroupKey(principal));
+      }
+      if (principal.source === 'group-member' && resourcePrincipalMatches(principal, term)) {
+        groupsWithMatchingMembers.add(resourcePrincipalGroupKey(principal));
+      }
+    }
+
+    return principals.filter((principal) => {
+      const groupKey = resourcePrincipalGroupKey(principal);
+      if (principal.source === 'group') {
+        return matchingGroups.has(groupKey) || groupsWithMatchingMembers.has(groupKey);
+      }
+      if (principal.source === 'group-member') {
+        return matchingGroups.has(groupKey) || resourcePrincipalMatches(principal, term);
+      }
+      return resourcePrincipalMatches(principal, term);
+    });
   }, [filter, principals]);
+
+  const visiblePrincipals = useMemo(() => {
+    if (!filteredPrincipals) return null;
+    return filteredPrincipals
+      .filter(
+        (principal) =>
+          principal.source !== 'group-member' || !collapsedGroups.has(resourcePrincipalGroupKey(principal)),
+      )
+      .slice(0, 100);
+  }, [collapsedGroups, filteredPrincipals]);
+
+  const toggleResourceGroup = (principal: ResourcePrincipalLite) => {
+    const key = resourcePrincipalGroupKey(principal);
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-3 p-4">
@@ -1170,39 +1224,70 @@ function ResourceAnswer({ node }: { node: ExplorerNode }) {
         />
       ) : null}
 
-      {filteredPrincipals && filteredPrincipals.length > 0 ? (
+      {visiblePrincipals && filteredPrincipals && filteredPrincipals.length > 0 ? (
         <div>
           <p className="mb-1.5 text-2xs uppercase tracking-wide text-fg-muted">
             {d.explorer.whoCanAccess} · <b className="tabular-nums">{filteredPrincipals.length}</b> {d.explorer.principals}
           </p>
           <ul className="divide-y divide-line/60 overflow-hidden rounded-md border border-line">
-            {filteredPrincipals.slice(0, 100).map((principal, index) => (
-              <li key={`${principal.sid}-${index}`} className="flex items-center gap-2 px-3 py-1.5">
-                {principal.source === 'unresolved' ? (
-                  <ShieldQuestion className="h-3 w-3 shrink-0 text-warning" />
-                ) : principal.source === 'group-member' ? (
-                  <Users className="h-3 w-3 shrink-0 text-info" />
-                ) : (
-                  <UserRound className="h-3 w-3 shrink-0 text-fg-muted" />
-                )}
-                <span className="min-w-0 flex-1 truncate text-xs text-fg-secondary" title={principal.sid}>
-                  {principal.name}
-                </span>
-                {principal.source === 'group-member' && principal.group_name ? (
-                  <Badge tone="info" className="max-w-[130px]">
-                    <span className="truncate" title={principal.via_chain || principal.group_name}>
-                      {interpolate(d.explorer.viaBadge, { group: principal.group_name })}
-                    </span>
-                  </Badge>
-                ) : null}
-                {principal.source === 'unresolved' ? <Badge tone="warning">{d.explorer.unresolved}</Badge> : null}
-                <span className="max-w-[110px] shrink-0 truncate text-2xs text-fg-muted" title={principal.rights.join(', ')}>
-                  {principal.rights.join(', ')}
-                </span>
-                {principal.types.includes('deny') ? <Badge tone="danger">{d.explorer.deny}</Badge> : null}
-                {principal.risk_level ? <Badge tone={riskTone(principal.risk_level)}>{principal.risk_level}</Badge> : null}
-              </li>
-            ))}
+            {visiblePrincipals.map((principal, index) => {
+              const isGroup = principal.source === 'group';
+              const isGroupMember = principal.source === 'group-member';
+              const isCollapsed = isGroup && collapsedGroups.has(resourcePrincipalGroupKey(principal));
+              const groupToggleLabel = interpolate(isCollapsed ? d.access.expandGroup : d.access.collapseGroup, {
+                group: principal.name,
+              });
+              return (
+                <li
+                  key={`${principal.source}-${principal.sid}-${principal.group_name || ''}-${index}`}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-1.5',
+                    isGroup && 'bg-surface-sunken/70',
+                    isGroupMember && 'pl-9',
+                  )}
+                >
+                  {isGroup ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded p-0.5 text-fg-faint hover:bg-surface-raised hover:text-fg"
+                      aria-expanded={!isCollapsed}
+                      aria-label={groupToggleLabel}
+                      title={groupToggleLabel}
+                      onClick={() => toggleResourceGroup(principal)}
+                    >
+                      {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </button>
+                  ) : null}
+                  {principal.source === 'unresolved' ? (
+                    <ShieldQuestion className="h-3 w-3 shrink-0 text-warning" />
+                  ) : isGroup ? (
+                    <Users className="h-3 w-3 shrink-0 text-info" />
+                  ) : (
+                    <UserRound className="h-3 w-3 shrink-0 text-fg-muted" />
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-xs text-fg-secondary" title={principal.sid}>
+                    {principal.name}
+                  </span>
+                  {isGroup ? (
+                    <Badge tone="info" className="shrink-0">
+                      {interpolate(d.access.membersCount, { count: principal.member_count || 0 })}
+                    </Badge>
+                  ) : isGroupMember && principal.group_name ? (
+                    <Badge tone="info" className="max-w-[130px]">
+                      <span className="truncate" title={principal.via_chain || principal.group_name}>
+                        {interpolate(d.explorer.viaBadge, { group: principal.group_name })}
+                      </span>
+                    </Badge>
+                  ) : null}
+                  {principal.source === 'unresolved' ? <Badge tone="warning">{d.explorer.unresolved}</Badge> : null}
+                  <span className="max-w-[110px] shrink-0 truncate text-2xs text-fg-muted" title={principal.rights.join(', ')}>
+                    {principal.rights.join(', ')}
+                  </span>
+                  {principal.types.includes('deny') ? <Badge tone="danger">{d.explorer.deny}</Badge> : null}
+                  {principal.risk_level ? <Badge tone={riskTone(principal.risk_level)}>{principal.risk_level}</Badge> : null}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

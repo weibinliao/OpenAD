@@ -4,26 +4,35 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/weibinliao/OpenAD/internal/database"
+	"github.com/weibinliao/OpenAD/internal/identityresolution"
 	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/weibinliao/OpenAD/internal/scanner"
-	"github.com/google/uuid"
 )
 
 type Request struct {
-	ScanID                      string
-	Path                        string
-	MaxDepth                    int
-	IncludeInherited            bool
-	Progress                    ProgressCallback
-	Context                     context.Context
-	EffectivePermissionExpander EffectivePermissionExpander
+	ScanID                             string
+	Path                               string
+	MaxDepth                           int
+	IncludeInherited                   bool
+	Progress                           ProgressCallback
+	Context                            context.Context
+	EffectivePermissionExpander        EffectivePermissionExpander
+	EffectivePermissionExpanderFactory func() (EffectivePermissionExpander, error)
 }
 
 type EffectivePermissionExpander interface {
 	Expand(ctx context.Context, permissions []scanner.Permission) ([]scanner.Permission, error)
+}
+
+type identityResolutionMetadataProvider interface {
+	Metadata() identityresolution.Metadata
 }
 
 type ProgressEvent struct {
@@ -39,16 +48,17 @@ type ProgressEvent struct {
 type ProgressCallback func(ProgressEvent)
 
 type Response struct {
-	SessionID        string               `json:"session_id,omitempty"`
-	RootPath         string               `json:"root_path"`
-	MaxDepth         int                  `json:"max_depth"`
-	IncludeInherited bool                 `json:"include_inherited"`
-	ItemsScanned     int                  `json:"items_scanned"`
-	PermissionCount  int                  `json:"permission_count"`
-	StartedAt        time.Time            `json:"started_at"`
-	FinishedAt       time.Time            `json:"finished_at"`
-	Permissions      []scanner.Permission `json:"permissions"`
-	Skipped          []scanner.PathError  `json:"skipped,omitempty"`
+	SessionID          string                      `json:"session_id,omitempty"`
+	RootPath           string                      `json:"root_path"`
+	MaxDepth           int                         `json:"max_depth"`
+	IncludeInherited   bool                        `json:"include_inherited"`
+	ItemsScanned       int                         `json:"items_scanned"`
+	PermissionCount    int                         `json:"permission_count"`
+	StartedAt          time.Time                   `json:"started_at"`
+	FinishedAt         time.Time                   `json:"finished_at"`
+	Permissions        []scanner.Permission        `json:"permissions"`
+	Skipped            []scanner.PathError         `json:"skipped,omitempty"`
+	IdentityResolution identityresolution.Metadata `json:"identity_resolution"`
 }
 
 type directoryScanner interface {
@@ -65,13 +75,22 @@ type sessionRepository interface {
 type Service struct {
 	scanner    directoryScanner
 	repository sessionRepository
+	scanSlots  chan struct{}
 }
 
+const defaultMaxConcurrentScans = 1
+
+var ErrScanConcurrencyLimitReached = errors.New("maximum concurrent scans reached")
+
 func New() *Service {
-	return NewWithDependencies(scanner.NewNTFSScanner(), &databaseSessionRepository{})
+	return newService(scanner.NewNTFSScanner(), &databaseSessionRepository{}, maxConcurrentScansFromEnv())
 }
 
 func NewWithDependencies(directoryScanner directoryScanner, repository sessionRepository) *Service {
+	return newService(directoryScanner, repository, defaultMaxConcurrentScans)
+}
+
+func newService(directoryScanner directoryScanner, repository sessionRepository, maxConcurrentScans int) *Service {
 	if directoryScanner == nil {
 		directoryScanner = scanner.NewNTFSScanner()
 	}
@@ -79,18 +98,24 @@ func NewWithDependencies(directoryScanner directoryScanner, repository sessionRe
 	if repository == nil {
 		repository = &databaseSessionRepository{}
 	}
+	if maxConcurrentScans < 1 {
+		maxConcurrentScans = defaultMaxConcurrentScans
+	}
 
 	return &Service{
 		scanner:    directoryScanner,
 		repository: repository,
+		scanSlots:  make(chan struct{}, maxConcurrentScans),
 	}
 }
 
 func (service *Service) Run(request Request) (*Response, error) {
-	startedAt := time.Now().UTC()
-	if closer, ok := request.EffectivePermissionExpander.(interface{ Close() }); ok {
-		defer closer.Close()
+	if !service.tryAcquireScanSlot() {
+		return nil, ErrScanConcurrencyLimitReached
 	}
+	defer service.releaseScanSlot()
+
+	startedAt := time.Now().UTC()
 
 	session := service.createSession(request, startedAt)
 	sessionID := sessionID(session)
@@ -138,6 +163,19 @@ func (service *Service) Run(request Request) (*Response, error) {
 	}
 
 	permissions := result.Permissions
+	identityMetadata := rawIdentityMetadata(permissions, "raw")
+	var preparationErr error
+	if request.EffectivePermissionExpander == nil && request.EffectivePermissionExpanderFactory != nil {
+		request.EffectivePermissionExpander, preparationErr = request.EffectivePermissionExpanderFactory()
+	}
+	if closer, ok := request.EffectivePermissionExpander.(interface{ Close() }); ok {
+		defer closer.Close()
+	}
+	if preparationErr != nil {
+		permissions = fallbackPermissions(permissions, "resolver_error")
+		identityMetadata = rawIdentityMetadata(permissions, "raw-fallback")
+		identityMetadata.Warning = "identity resolution unavailable"
+	}
 	if request.EffectivePermissionExpander != nil {
 		ctx := request.Context
 		if ctx == nil {
@@ -152,9 +190,9 @@ func (service *Service) Run(request Request) (*Response, error) {
 			Status:          "expanding",
 		})
 
-		permissions, err = request.EffectivePermissionExpander.Expand(ctx, permissions)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
+		expandedPermissions, expandErr := request.EffectivePermissionExpander.Expand(ctx, permissions)
+		if expandErr != nil {
+			if errors.Is(expandErr, context.Canceled) {
 				service.cancelSession(session)
 				service.emitProgress(request, ProgressEvent{
 					SessionID:   sessionID,
@@ -162,31 +200,38 @@ func (service *Service) Run(request Request) (*Response, error) {
 					Status:      "cancelled",
 					Error:       "scan cancelled",
 				})
-				return nil, err
+				return nil, expandErr
 			}
 
-			service.failSession(session, err)
-			service.emitProgress(request, ProgressEvent{
-				SessionID:   sessionID,
-				CurrentPath: request.Path,
-				Status:      "failed",
-				Error:       err.Error(),
-			})
-			return nil, err
+			permissions = fallbackPermissions(permissions, "resolver_error")
+			identityMetadata = rawIdentityMetadata(permissions, "raw-fallback")
+			identityMetadata.Warning = "identity resolution unavailable"
+		} else if len(permissions) > 0 && len(expandedPermissions) == 0 {
+			permissions = fallbackPermissions(permissions, "empty_result")
+			identityMetadata = rawIdentityMetadata(permissions, "raw-fallback")
+			identityMetadata.Warning = "identity resolution returned no principals"
+		} else {
+			permissions = expandedPermissions
+			if provider, ok := request.EffectivePermissionExpander.(identityResolutionMetadataProvider); ok {
+				identityMetadata = provider.Metadata()
+			} else {
+				identityMetadata = resolvedIdentityMetadata(result.Permissions, "ldap")
+			}
 		}
 	}
 
 	finishedAt := time.Now().UTC()
 	response := &Response{
-		RootPath:         result.RootPath,
-		MaxDepth:         result.MaxDepth,
-		IncludeInherited: result.IncludeInherited,
-		ItemsScanned:     result.ItemsScanned,
-		PermissionCount:  len(permissions),
-		StartedAt:        startedAt,
-		FinishedAt:       finishedAt,
-		Permissions:      permissions,
-		Skipped:          result.Skipped,
+		RootPath:           result.RootPath,
+		MaxDepth:           result.MaxDepth,
+		IncludeInherited:   result.IncludeInherited,
+		ItemsScanned:       result.ItemsScanned,
+		PermissionCount:    len(permissions),
+		StartedAt:          startedAt,
+		FinishedAt:         finishedAt,
+		Permissions:        permissions,
+		Skipped:            result.Skipped,
+		IdentityResolution: identityMetadata,
 	}
 
 	if session != nil {
@@ -203,6 +248,82 @@ func (service *Service) Run(request Request) (*Response, error) {
 	})
 
 	return response, nil
+}
+
+func fallbackPermissions(permissions []scanner.Permission, reason string) []scanner.Permission {
+	result := make([]scanner.Permission, 0, len(permissions))
+	for _, permission := range permissions {
+		permission.ResolutionSource = "raw"
+		permission.ResolutionReason = reason
+		result = append(result, permission)
+	}
+	return result
+}
+
+func rawIdentityMetadata(permissions []scanner.Permission, mode string) identityresolution.Metadata {
+	return identityresolution.Metadata{
+		Mode:                     mode,
+		UnresolvedPrincipalCount: countDistinctPrincipals(permissions),
+	}
+}
+
+func resolvedIdentityMetadata(permissions []scanner.Permission, mode string) identityresolution.Metadata {
+	return identityresolution.Metadata{
+		Mode:                   mode,
+		ResolvedPrincipalCount: countDistinctPrincipals(permissions),
+	}
+}
+
+func countDistinctPrincipals(permissions []scanner.Permission) int {
+	principals := make(map[string]struct{}, len(permissions))
+	for _, permission := range permissions {
+		principal := strings.TrimSpace(permission.TrusteeSID)
+		if principal == "" {
+			principal = strings.TrimSpace(permission.Trustee)
+		}
+		if principal == "" {
+			continue
+		}
+		principals[strings.ToUpper(principal)] = struct{}{}
+	}
+	return len(principals)
+}
+
+func (service *Service) tryAcquireScanSlot() bool {
+	if service.scanSlots == nil {
+		return true
+	}
+
+	select {
+	case service.scanSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (service *Service) releaseScanSlot() {
+	if service.scanSlots != nil {
+		<-service.scanSlots
+	}
+}
+
+func maxConcurrentScansFromEnv() int {
+	for _, key := range []string{"PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS", "FSA_MAX_CONCURRENT_SCANS"} {
+		rawValue := strings.TrimSpace(os.Getenv(key))
+		if rawValue == "" {
+			continue
+		}
+
+		value, err := strconv.Atoi(rawValue)
+		if err != nil || value < 1 {
+			log.Printf("invalid %s=%q; using default maximum concurrent scans: %d", key, rawValue, defaultMaxConcurrentScans)
+			return defaultMaxConcurrentScans
+		}
+		return value
+	}
+
+	return defaultMaxConcurrentScans
 }
 
 func (service *Service) emitProgress(request Request, event ProgressEvent) {
@@ -297,11 +418,19 @@ func (repository *databaseSessionRepository) CompleteSession(session *models.Sca
 
 	finishedAt := response.FinishedAt
 	updates := map[string]any{
-		"status":           "completed",
-		"items_scanned":    response.ItemsScanned,
-		"permission_count": response.PermissionCount,
-		"finished_at":      &finishedAt,
-		"error_message":    "",
+		"status":                      "completed",
+		"items_scanned":               response.ItemsScanned,
+		"permission_count":            response.PermissionCount,
+		"finished_at":                 &finishedAt,
+		"error_message":               "",
+		"identity_resolution_mode":    response.IdentityResolution.Mode,
+		"resolved_principal_count":    response.IdentityResolution.ResolvedPrincipalCount,
+		"unresolved_principal_count":  response.IdentityResolution.UnresolvedPrincipalCount,
+		"identity_resolution_warning": response.IdentityResolution.Warning,
+	}
+	if response.IdentityResolution.DirectorySyncRunID != uuid.Nil {
+		runID := response.IdentityResolution.DirectorySyncRunID
+		updates["directory_sync_run_id"] = &runID
 	}
 
 	if err := database.DB.Model(session).Updates(updates).Error; err != nil {
@@ -333,6 +462,8 @@ func (repository *databaseSessionRepository) CompleteSession(session *models.Sca
 			Domain:                    permission.Domain,
 			OriginatingGroup:          permission.OriginatingGroup,
 			GroupInheritanceHierarchy: permission.GroupInheritanceHierarchy,
+			ResolutionSource:          permission.ResolutionSource,
+			ResolutionReason:          permission.ResolutionReason,
 		})
 	}
 

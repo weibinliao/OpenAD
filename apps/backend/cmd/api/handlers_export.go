@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,10 +9,11 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
+	"github.com/gin-gonic/gin"
 	"github.com/weibinliao/OpenAD/internal/export"
 	"github.com/weibinliao/OpenAD/internal/models"
-	"github.com/gin-gonic/gin"
 )
 
 type ExportRequest struct {
@@ -63,10 +65,11 @@ type ExportSummaryRequest struct {
 	FileColumns  []string            `json:"file_columns"`
 }
 
+const exportRequestBodyLimitBytes int64 = 64 << 20
+
 func (application *application) handleExport(context *gin.Context) {
 	var request ExportRequest
-	if err := context.ShouldBindJSON(&request); err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindExportJSON(context, &request, exportRequestBodyLimitBytes) {
 		return
 	}
 
@@ -116,8 +119,7 @@ func (application *application) handleExport(context *gin.Context) {
 
 func (application *application) handleExportDownload(context *gin.Context) {
 	var request ExportDownloadRequest
-	if err := context.ShouldBindJSON(&request); err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindExportJSON(context, &request, exportRequestBodyLimitBytes) {
 		return
 	}
 
@@ -128,13 +130,7 @@ func (application *application) handleExportDownload(context *gin.Context) {
 		return
 	}
 
-	baseName := strings.TrimSpace(request.Filename)
-	if baseName == "" {
-		baseName = "permissions-export"
-	}
-	if !strings.HasSuffix(strings.ToLower(baseName), "."+extension) {
-		baseName = fmt.Sprintf("%s.%s", strings.TrimSuffix(baseName, "."), extension)
-	}
+	baseName := sanitizeExportFilename(request.Filename, extension)
 
 	tempFile, err := os.CreateTemp("", "fsa-export-*."+extension)
 	if err != nil {
@@ -174,21 +170,14 @@ func (application *application) handleExportDownload(context *gin.Context) {
 		return
 	}
 
-	content, err := os.ReadFile(tempPath)
-	if err != nil {
-		context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
 	context.Header("Content-Type", contentType)
-	context.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", baseName))
-	context.Data(http.StatusOK, contentType, content)
+	context.Header("Content-Disposition", exportContentDisposition(baseName))
+	context.File(tempPath)
 }
 
 func (application *application) handleExportSummary(context *gin.Context) {
 	var request ExportSummaryRequest
-	if err := context.ShouldBindJSON(&request); err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindExportJSON(context, &request, exportRequestBodyLimitBytes) {
 		return
 	}
 
@@ -219,6 +208,33 @@ func (application *application) handleExportSummary(context *gin.Context) {
 	})
 }
 
+func bindExportJSON(context *gin.Context, destination any, limitBytes int64) bool {
+	if context.Request.ContentLength > limitBytes {
+		writeExportRequestTooLarge(context)
+		return false
+	}
+
+	context.Request.Body = http.MaxBytesReader(context.Writer, context.Request.Body, limitBytes)
+	if err := context.ShouldBindJSON(destination); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeExportRequestTooLarge(context)
+			return false
+		}
+
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return false
+	}
+
+	return true
+}
+
+func writeExportRequestTooLarge(context *gin.Context) {
+	context.JSON(http.StatusRequestEntityTooLarge, gin.H{
+		"error": "export request is too large; narrow the scan scope or export permissions in smaller batches",
+	})
+}
+
 func (application *application) handleListExportSummaryTemplates(context *gin.Context) {
 	items := summaryTemplates()
 	context.JSON(http.StatusOK, gin.H{
@@ -241,26 +257,7 @@ func exportFormatMeta(format string) (extension string, contentType string) {
 }
 
 func resolveServerExportPath(filename string, extension string) (string, error) {
-	baseName := strings.TrimSpace(filepath.Base(filename))
-	if baseName == "" || baseName == "." || baseName == string(filepath.Separator) {
-		baseName = "permissions-export"
-	}
-
-	baseName = strings.Map(func(r rune) rune {
-		switch r {
-		case '<', '>', ':', '"', '/', '\\', '|', '?', '*':
-			return '-'
-		default:
-			return r
-		}
-	}, baseName)
-	baseName = strings.Trim(baseName, " .")
-	if baseName == "" {
-		baseName = "permissions-export"
-	}
-	if !strings.HasSuffix(strings.ToLower(baseName), "."+extension) {
-		baseName = fmt.Sprintf("%s.%s", strings.TrimSuffix(baseName, "."), extension)
-	}
+	baseName := sanitizeExportFilename(filename, extension)
 
 	exportDir := strings.TrimSpace(os.Getenv("PERMISSION_PROTECTOR_EXPORT_DIR"))
 	if exportDir == "" {
@@ -280,6 +277,74 @@ func resolveServerExportPath(filename string, extension string) (string, error) 
 		return "", err
 	}
 	return filepath.Join(exportDir, baseName), nil
+}
+
+func sanitizeExportFilename(filename string, extension string) string {
+	baseName := strings.TrimSpace(filepath.Base(filename))
+	if baseName == "" || baseName == "." || baseName == string(filepath.Separator) {
+		baseName = "permissions-export"
+	}
+
+	baseName = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return '-'
+		}
+		switch r {
+		case '<', '>', ':', '"', '/', '\\', '|', '?', '*', ';':
+			return '-'
+		default:
+			return r
+		}
+	}, baseName)
+	baseName = strings.Trim(baseName, " .")
+	if baseName == "" {
+		baseName = "permissions-export"
+	}
+	if !strings.HasSuffix(strings.ToLower(baseName), "."+extension) {
+		baseName = fmt.Sprintf("%s.%s", strings.TrimSuffix(baseName, "."), extension)
+	}
+	return baseName
+}
+
+func exportContentDisposition(filename string) string {
+	return fmt.Sprintf(
+		"attachment; filename=\"%s\"; filename*=UTF-8''%s",
+		asciiExportFilename(filename),
+		encodeRFC5987Value(filename),
+	)
+}
+
+func encodeRFC5987Value(value string) string {
+	const hex = "0123456789ABCDEF"
+	var encoded strings.Builder
+	encoded.Grow(len(value))
+	for _, char := range []byte(value) {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || strings.ContainsRune("!#$&+-.^_`|~", rune(char)) {
+			encoded.WriteByte(char)
+			continue
+		}
+		encoded.WriteByte('%')
+		encoded.WriteByte(hex[char>>4])
+		encoded.WriteByte(hex[char&0x0f])
+	}
+	return encoded.String()
+}
+
+func asciiExportFilename(filename string) string {
+	extension := filepath.Ext(filename)
+	stem := strings.TrimSuffix(filename, extension)
+	stem = strings.Map(func(r rune) rune {
+		if r < 0x20 || r > 0x7e {
+			return '-'
+		}
+		return r
+	}, stem)
+	stem = strings.Trim(stem, " .-")
+	if stem == "" {
+		stem = "permissions-export"
+	}
+	return stem + extension
 }
 
 type permissionSummary struct {

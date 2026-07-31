@@ -34,3 +34,13 @@ func TestExclusionFilterSeparatesGroupAndUserPatterns(t *testing.T) {
 	assert.True(t, filter.ShouldExcludeUser(models.ADPrincipal{DN: "CN=Temp,OU=Users,DC=example,DC=com", SAMAccountName: "temp-01", Type: models.ADObjectTypeUser}))
 	assert.False(t, filter.ShouldExcludeGroup(models.ADPrincipal{DN: "CN=Audit,OU=Groups,DC=example,DC=com", Name: "EXAMPLE\\AuditTeam", Type: models.ADObjectTypeGroup}))
 }
+
+func TestExclusionFilterDoesNotTurnQualifiedWildcardIntoGlobalWildcard(t *testing.T) {
+	filter := NewExclusionFilter()
+	filter.AddGroupPattern(`NT AUTHORITY\*`)
+
+	assert.True(t, filter.ShouldExclude(`NT AUTHORITY\SYSTEM`))
+	assert.False(t, filter.ShouldExclude(`S-1-5-21-1-2-3-1001`))
+	assert.False(t, filter.ShouldExclude(`CORP\Finance`))
+	assert.False(t, filter.ShouldExclude(`alice`))
+}

@@ -14,6 +14,10 @@ type GroupSearcher interface {
 	SearchGroups(query string, limit int) ([]models.ADGroup, error)
 }
 
+type contextGroupSearcher interface {
+	SearchGroupsContext(ctx context.Context, query string, limit int) ([]models.ADGroup, error)
+}
+
 type PrincipalResolver interface {
 	ResolvePrincipal(ctx context.Context, identifier string) (*models.ADPrincipal, error)
 }
@@ -181,7 +185,9 @@ func (expander *PermissionExpander) Close() {
 }
 
 func (expander *PermissionExpander) findGroupForTrustee(ctx context.Context, trustee string) (*models.ADGroup, bool, error) {
-	_ = ctx
+	if err := contextError(ctx); err != nil {
+		return nil, false, err
+	}
 
 	cacheKey := strings.ToLower(strings.TrimSpace(trustee))
 	if result, found := expander.groupCache[cacheKey]; found {
@@ -191,11 +197,25 @@ func (expander *PermissionExpander) findGroupForTrustee(ctx context.Context, tru
 	if expander.searcher != nil {
 		candidates := trusteeSearchTerms(trustee)
 		for _, candidate := range candidates {
+			if err := contextError(ctx); err != nil {
+				return nil, false, err
+			}
 			if candidate == "" {
 				continue
 			}
 
-			groups, err := expander.searcher.SearchGroups(candidate, 10)
+			var groups []models.ADGroup
+			var err error
+			if contextualSearcher, ok := expander.searcher.(contextGroupSearcher); ok {
+				groups, err = contextualSearcher.SearchGroupsContext(ctx, candidate, 10)
+			} else {
+				// Compatibility searchers do not accept context, so cancellation can
+				// only be observed at their network-call boundaries.
+				groups, err = expander.searcher.SearchGroups(candidate, 10)
+				if cancellationErr := contextError(ctx); cancellationErr != nil {
+					return nil, false, cancellationErr
+				}
+			}
 			if err != nil {
 				return nil, false, err
 			}
@@ -463,6 +483,9 @@ func (expander *PermissionExpander) resolvePrincipal(ctx context.Context, truste
 	if expander == nil || expander.principalLookup == nil {
 		return nil, nil
 	}
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
 
 	cacheKey := strings.ToLower(strings.TrimSpace(trustee))
 	if cached, found := expander.principalCache[cacheKey]; found {
@@ -470,6 +493,9 @@ func (expander *PermissionExpander) resolvePrincipal(ctx context.Context, truste
 	}
 
 	for _, candidate := range trusteeSearchTerms(trustee) {
+		if err := contextError(ctx); err != nil {
+			return nil, err
+		}
 		principal, err := expander.principalLookup.ResolvePrincipal(ctx, candidate)
 		if err != nil {
 			return nil, err

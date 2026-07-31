@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/weibinliao/OpenAD/internal/models"
-	"github.com/weibinliao/OpenAD/internal/scanner"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weibinliao/OpenAD/internal/models"
+	"github.com/weibinliao/OpenAD/internal/scanner"
 )
 
 func TestNewService(t *testing.T) {
@@ -186,6 +186,84 @@ func TestRunExpandsEffectivePermissionsWhenConfigured(t *testing.T) {
 	assert.Equal(t, 1, response.PermissionCount)
 }
 
+func TestRunFallsBackToRawPermissionsWhenExpanderFails(t *testing.T) {
+	originalSID := "S-1-5-21-1-2-3-1001"
+	repository := &stubSessionRepository{}
+	service := NewWithDependencies(&stubDirectoryScanner{result: &scanner.Result{
+		RootPath:     `C:\Finance`,
+		ItemsScanned: 1,
+		Permissions: []scanner.Permission{{
+			Path:       `C:\Finance`,
+			Trustee:    originalSID,
+			TrusteeSID: originalSID,
+			Rights:     "Read",
+			Type:       "Allow",
+		}},
+	}}, repository)
+
+	response, err := service.Run(Request{
+		Path:                        `C:\Finance`,
+		Context:                     context.Background(),
+		EffectivePermissionExpander: &stubEffectivePermissionExpander{err: errors.New("ldap unavailable")},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	require.Len(t, response.Permissions, 1)
+	assert.Equal(t, originalSID, response.Permissions[0].TrusteeSID)
+	assert.Equal(t, "raw", response.Permissions[0].ResolutionSource)
+	assert.Equal(t, "resolver_error", response.Permissions[0].ResolutionReason)
+	assert.Equal(t, "raw-fallback", response.IdentityResolution.Mode)
+	assert.Equal(t, 1, response.IdentityResolution.UnresolvedPrincipalCount)
+	assert.Equal(t, 1, repository.completeCalls)
+	assert.Equal(t, 0, repository.failedCalls)
+}
+
+func TestRunFallsBackToRawPermissionsWhenExpanderReturnsEmptyResult(t *testing.T) {
+	originalSID := "S-1-5-21-1-2-3-1001"
+	repository := &stubSessionRepository{}
+	service := NewWithDependencies(&stubDirectoryScanner{result: &scanner.Result{
+		RootPath:     `C:\Finance`,
+		ItemsScanned: 1,
+		Permissions:  []scanner.Permission{{Path: `C:\Finance`, Trustee: originalSID, TrusteeSID: originalSID}},
+	}}, repository)
+
+	response, err := service.Run(Request{
+		Path:                        `C:\Finance`,
+		EffectivePermissionExpander: &stubEffectivePermissionExpander{expanded: []scanner.Permission{}},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, response.Permissions, 1)
+	assert.Equal(t, originalSID, response.Permissions[0].TrusteeSID)
+	assert.Equal(t, "empty_result", response.Permissions[0].ResolutionReason)
+	assert.Equal(t, "raw-fallback", response.IdentityResolution.Mode)
+	assert.Equal(t, 1, repository.completeCalls)
+	assert.Equal(t, 0, repository.failedCalls)
+}
+
+func TestRunFallsBackToRawPermissionsWhenExpanderFactoryFails(t *testing.T) {
+	repository := &stubSessionRepository{}
+	service := NewWithDependencies(&stubDirectoryScanner{result: &scanner.Result{
+		RootPath:     `C:\Finance`,
+		ItemsScanned: 1,
+		Permissions:  []scanner.Permission{{Path: `C:\Finance`, Trustee: "S-1-1-0", TrusteeSID: "S-1-1-0"}},
+	}}, repository)
+
+	response, err := service.Run(Request{
+		Path: `C:\Finance`,
+		EffectivePermissionExpanderFactory: func() (EffectivePermissionExpander, error) {
+			return nil, errors.New("cannot connect")
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, response.Permissions, 1)
+	assert.Equal(t, "raw-fallback", response.IdentityResolution.Mode)
+	assert.Equal(t, 1, repository.completeCalls)
+	assert.Equal(t, 0, repository.failedCalls)
+}
+
 func TestRunMarksSessionFailedWhenScannerReturnsError(t *testing.T) {
 	scanErr := errors.New("scanner unavailable")
 	repository := &stubSessionRepository{}
@@ -240,6 +318,70 @@ func TestRunMarksSessionCancelledWhenScannerReturnsCanceled(t *testing.T) {
 	assert.Equal(t, 0, repository.completeCalls)
 }
 
+func TestRunRejectsImmediatelyWhenConcurrencyLimitIsReached(t *testing.T) {
+	blockingScanner := &blockingDirectoryScanner{
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	service := newService(blockingScanner, &stubSessionRepository{}, 1)
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := service.Run(Request{Path: `C:\First`, Context: context.Background()})
+		firstDone <- err
+	}()
+
+	select {
+	case <-blockingScanner.started:
+	case <-time.After(time.Second):
+		t.Fatal("first scan did not start")
+	}
+
+	startedAt := time.Now()
+	factoryCalls := 0
+	response, err := service.Run(Request{
+		Path:    `C:\Second`,
+		Context: context.Background(),
+		EffectivePermissionExpanderFactory: func() (EffectivePermissionExpander, error) {
+			factoryCalls++
+			return &stubEffectivePermissionExpander{}, nil
+		},
+	})
+	assert.Nil(t, response)
+	assert.ErrorIs(t, err, ErrScanConcurrencyLimitReached)
+	assert.Less(t, time.Since(startedAt), 100*time.Millisecond)
+	assert.Zero(t, factoryCalls)
+
+	close(blockingScanner.release)
+	require.NoError(t, <-firstDone)
+}
+
+func TestMaxConcurrentScansFromEnvUsesPrimaryAndCompatibilityVariables(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		t.Setenv("PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS", "")
+		t.Setenv("FSA_MAX_CONCURRENT_SCANS", "")
+		assert.Equal(t, 1, maxConcurrentScansFromEnv())
+	})
+
+	t.Run("primary", func(t *testing.T) {
+		t.Setenv("PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS", "2")
+		t.Setenv("FSA_MAX_CONCURRENT_SCANS", "3")
+		assert.Equal(t, 2, maxConcurrentScansFromEnv())
+	})
+
+	t.Run("compatibility fallback", func(t *testing.T) {
+		t.Setenv("PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS", "")
+		t.Setenv("FSA_MAX_CONCURRENT_SCANS", "2")
+		assert.Equal(t, 2, maxConcurrentScansFromEnv())
+	})
+
+	t.Run("invalid falls back to default", func(t *testing.T) {
+		t.Setenv("PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS", "unlimited")
+		t.Setenv("FSA_MAX_CONCURRENT_SCANS", "")
+		assert.Equal(t, 1, maxConcurrentScansFromEnv())
+	})
+}
+
 func TestNewWithDependenciesFallsBackToDefaultImplementations(t *testing.T) {
 	service := NewWithDependencies(nil, nil)
 	require.NotNil(t, service)
@@ -263,6 +405,26 @@ type stubDirectoryScanner struct {
 
 	receivedPath    string
 	receivedOptions scanner.Options
+}
+
+type blockingDirectoryScanner struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (scannerStub *blockingDirectoryScanner) ScanDirectory(path string, options scanner.Options) (*scanner.Result, error) {
+	scannerStub.started <- struct{}{}
+	select {
+	case <-scannerStub.release:
+	case <-options.Context.Done():
+		return nil, options.Context.Err()
+	}
+
+	return &scanner.Result{
+		RootPath:         path,
+		MaxDepth:         options.MaxDepth,
+		IncludeInherited: options.IncludeInherited,
+	}, nil
 }
 
 func (scannerStub *stubDirectoryScanner) ScanDirectory(path string, options scanner.Options) (*scanner.Result, error) {

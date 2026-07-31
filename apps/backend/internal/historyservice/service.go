@@ -1,14 +1,18 @@
 package historyservice
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/weibinliao/OpenAD/internal/database"
-	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/google/uuid"
+	"github.com/weibinliao/OpenAD/internal/database"
+	"github.com/weibinliao/OpenAD/internal/identityresolution"
+	"github.com/weibinliao/OpenAD/internal/models"
+	"github.com/weibinliao/OpenAD/internal/scanner"
 	"gorm.io/gorm"
 )
 
@@ -38,6 +42,7 @@ type queryRepository interface {
 
 type Service struct {
 	repository repository
+	db         *gorm.DB
 }
 
 type Pagination struct {
@@ -86,20 +91,25 @@ type ChangeListResponse struct {
 }
 
 type SessionBundleResponse struct {
-	Session     models.ScanSession  `json:"session"`
-	Permissions []models.Permission `json:"permissions"`
+	Session            models.ScanSession          `json:"session"`
+	Permissions        []models.Permission         `json:"permissions"`
+	IdentityResolution identityresolution.Metadata `json:"identity_resolution"`
 }
 
 func New() *Service {
-	return NewWithRepository(&databaseRepository{})
+	return NewWithRepositoryAndDatabase(&databaseRepository{}, database.DB)
 }
 
 func NewWithRepository(repository repository) *Service {
+	return NewWithRepositoryAndDatabase(repository, nil)
+}
+
+func NewWithRepositoryAndDatabase(repository repository, db *gorm.DB) *Service {
 	if repository == nil {
 		repository = &databaseRepository{}
 	}
 
-	return &Service{repository: repository}
+	return &Service{repository: repository, db: db}
 }
 
 func (service *Service) ListSessions(filter SessionListFilter) (*SessionListResponse, error) {
@@ -171,10 +181,41 @@ func (service *Service) GetSessionBundle(id string) (*SessionBundleResponse, err
 	if err != nil {
 		return nil, err
 	}
+	metadata := identityresolution.Metadata{
+		Mode:                     session.IdentityResolutionMode,
+		ResolvedPrincipalCount:   session.ResolvedPrincipalCount,
+		UnresolvedPrincipalCount: session.UnresolvedPrincipalCount,
+		Warning:                  session.IdentityResolutionWarning,
+	}
+	if session.DirectorySyncRunID != nil {
+		metadata.DirectorySyncRunID = *session.DirectorySyncRunID
+	}
+
+	if session.IdentityResolutionMode == "" && service.db != nil {
+		run, inference, selectErr := selectLegacyRun(service.db, *session, permissions)
+		if selectErr != nil {
+			return nil, selectErr
+		}
+		if run != nil {
+			resolver := identityresolution.NewService(service.db, identityresolution.Options{RunID: run.ID})
+			resolved, resolveErr := resolver.Resolve(context.Background(), modelPermissionsToScanner(permissions))
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			permissions = scannerPermissionsToModels(permissions, resolved.Permissions)
+			metadata = resolved.Metadata
+			metadata.Inference = inference
+		}
+	}
+	if metadata.Mode == "" {
+		metadata.Mode = "raw"
+		metadata.UnresolvedPrincipalCount = countModelPrincipals(permissions)
+	}
 
 	return &SessionBundleResponse{
-		Session:     *session,
-		Permissions: permissions,
+		Session:            *session,
+		Permissions:        permissions,
+		IdentityResolution: metadata,
 	}, nil
 }
 
@@ -230,6 +271,175 @@ func (service *Service) ListSessionPermissions(id string, filter PermissionListF
 		Items:      filteredPermissions,
 		Pagination: buildPagination(page, pageSize, total),
 	}, nil
+}
+
+func selectLegacyRun(db *gorm.DB, session models.ScanSession, permissions []models.Permission) (*models.DirectorySyncRun, string, error) {
+	if db == nil {
+		return nil, "", nil
+	}
+	if session.DirectorySyncRunID != nil {
+		var bound models.DirectorySyncRun
+		if err := db.Where("id = ? AND status = ?", *session.DirectorySyncRunID, "completed").First(&bound).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, "", nil
+			}
+			return nil, "", err
+		}
+		return &bound, "bound", nil
+	}
+
+	var runs []models.DirectorySyncRun
+	if err := db.Where("status = ?", "completed").Find(&runs).Error; err != nil {
+		return nil, "", fmt.Errorf("load directory snapshots: %w", err)
+	}
+	sort.SliceStable(runs, func(left, right int) bool {
+		return directoryRunCompletedAt(runs[left]).Before(directoryRunCompletedAt(runs[right]))
+	})
+	if len(runs) == 0 {
+		return nil, "", nil
+	}
+
+	sids := make(map[string]struct{})
+	for _, permission := range permissions {
+		sid := strings.ToUpper(strings.TrimSpace(permission.TrusteeSID))
+		if sid != "" {
+			sids[sid] = struct{}{}
+		}
+	}
+
+	var bestBefore *models.DirectorySyncRun
+	bestCoverage := -1
+	for index := range runs {
+		run := runs[index]
+		completedAt := directoryRunCompletedAt(run)
+		if completedAt.After(session.StartedAt) {
+			continue
+		}
+		coverage, err := snapshotSIDCoverage(db, run.ID, sids)
+		if err != nil {
+			return nil, "", err
+		}
+		if bestBefore == nil || coverage > bestCoverage || (coverage == bestCoverage && completedAt.After(directoryRunCompletedAt(*bestBefore))) {
+			candidate := run
+			bestBefore = &candidate
+			bestCoverage = coverage
+		}
+	}
+	if bestBefore != nil {
+		return bestBefore, "legacy_inferred_before_scan", nil
+	}
+
+	for index := range runs {
+		if directoryRunCompletedAt(runs[index]).After(session.StartedAt) {
+			candidate := runs[index]
+			return &candidate, "legacy_inferred_after_scan", nil
+		}
+	}
+	return nil, "", nil
+}
+
+func directoryRunCompletedAt(run models.DirectorySyncRun) time.Time {
+	if run.FinishedAt != nil && !run.FinishedAt.IsZero() {
+		return run.FinishedAt.UTC()
+	}
+	return run.StartedAt.UTC()
+}
+
+func snapshotSIDCoverage(db *gorm.DB, runID uuid.UUID, wanted map[string]struct{}) (int, error) {
+	if len(wanted) == 0 {
+		return 0, nil
+	}
+	var users []models.ADUserRecord
+	if err := db.Select("sid").Where("run_id = ?", runID).Find(&users).Error; err != nil {
+		return 0, fmt.Errorf("load snapshot user SIDs: %w", err)
+	}
+	var groups []models.ADGroupRecord
+	if err := db.Select("sid").Where("run_id = ?", runID).Find(&groups).Error; err != nil {
+		return 0, fmt.Errorf("load snapshot group SIDs: %w", err)
+	}
+	found := make(map[string]struct{})
+	for _, user := range users {
+		key := strings.ToUpper(strings.TrimSpace(user.SID))
+		if _, ok := wanted[key]; ok {
+			found[key] = struct{}{}
+		}
+	}
+	for _, group := range groups {
+		key := strings.ToUpper(strings.TrimSpace(group.SID))
+		if _, ok := wanted[key]; ok {
+			found[key] = struct{}{}
+		}
+	}
+	return len(found), nil
+}
+
+func modelPermissionsToScanner(permissions []models.Permission) []scanner.Permission {
+	result := make([]scanner.Permission, 0, len(permissions))
+	for _, permission := range permissions {
+		result = append(result, scanner.Permission{
+			Path: permission.Path, Trustee: permission.Trustee, TrusteeSID: permission.TrusteeSID,
+			Rights: permission.Rights, Type: permission.Type, Inherited: permission.Inherited,
+			Source: permission.Source, AppliesTo: permission.AppliesTo, AccountType: permission.AccountType,
+			AccessMask: permission.AccessMask, RiskLevel: permission.RiskLevel, ParentDelta: permission.ParentDelta,
+			AccountName: permission.AccountName, FirstName: permission.FirstName, LastName: permission.LastName,
+			Email: permission.Email, Department: permission.Department, Division: permission.Division, Domain: permission.Domain,
+			OriginatingGroup: permission.OriginatingGroup, GroupInheritanceHierarchy: permission.GroupInheritanceHierarchy,
+			ResolutionSource: permission.ResolutionSource, ResolutionReason: permission.ResolutionReason,
+		})
+	}
+	return result
+}
+
+func scannerPermissionsToModels(original []models.Permission, resolved []scanner.Permission) []models.Permission {
+	result := make([]models.Permission, 0, len(resolved))
+	for _, permission := range resolved {
+		template := models.Permission{}
+		for _, candidate := range original {
+			if candidate.Path == permission.Path && candidate.Rights == permission.Rights && candidate.Type == permission.Type && candidate.Inherited == permission.Inherited {
+				template = candidate
+				break
+			}
+		}
+		template.Path = permission.Path
+		template.Trustee = permission.Trustee
+		template.TrusteeSID = permission.TrusteeSID
+		template.Rights = permission.Rights
+		template.Type = permission.Type
+		template.Inherited = permission.Inherited
+		template.Source = permission.Source
+		template.AppliesTo = permission.AppliesTo
+		template.AccountType = permission.AccountType
+		template.AccessMask = permission.AccessMask
+		template.RiskLevel = permission.RiskLevel
+		template.ParentDelta = permission.ParentDelta
+		template.AccountName = permission.AccountName
+		template.FirstName = permission.FirstName
+		template.LastName = permission.LastName
+		template.Email = permission.Email
+		template.Department = permission.Department
+		template.Division = permission.Division
+		template.Domain = permission.Domain
+		template.OriginatingGroup = permission.OriginatingGroup
+		template.GroupInheritanceHierarchy = permission.GroupInheritanceHierarchy
+		template.ResolutionSource = permission.ResolutionSource
+		template.ResolutionReason = permission.ResolutionReason
+		result = append(result, template)
+	}
+	return result
+}
+
+func countModelPrincipals(permissions []models.Permission) int {
+	values := make(map[string]struct{}, len(permissions))
+	for _, permission := range permissions {
+		value := strings.TrimSpace(permission.TrusteeSID)
+		if value == "" {
+			value = strings.TrimSpace(permission.Trustee)
+		}
+		if value != "" {
+			values[strings.ToUpper(value)] = struct{}{}
+		}
+	}
+	return len(values)
 }
 
 func (service *Service) ListSessionChanges(id string, filter ChangeListFilter) (*ChangeListResponse, error) {

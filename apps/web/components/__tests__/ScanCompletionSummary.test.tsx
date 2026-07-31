@@ -23,6 +23,11 @@ describe('ScanCompletionSummary', () => {
         permissionCount={2461}
         skippedCount={3}
         riskCount={12}
+        identityResolution={{
+          mode: 'snapshot+ldap',
+          resolved_principal_count: 7,
+          unresolved_principal_count: 1,
+        }}
         onRescan={onRescan}
       />,
     );
@@ -32,6 +37,8 @@ describe('ScanCompletionSummary', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
     expect(screen.getByText(/session-1/)).toBeInTheDocument();
+    expect(screen.getByText('Snapshot + LDAP')).toBeInTheDocument();
+    expect(screen.getByText('1 unresolved')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'View permission evidence' }));
     expect(push).toHaveBeenLastCalledWith('/access?path=%5C%5Cfileserver%5Cfinance');

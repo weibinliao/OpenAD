@@ -2,13 +2,15 @@ package database
 
 import (
 	"errors"
+	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/glebarez/sqlite"
+	"github.com/weibinliao/OpenAD/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -16,6 +18,8 @@ import (
 var DB *gorm.DB
 
 var StoreDescription string
+
+const sqliteBusyTimeoutMilliseconds = 5000
 
 func InitWithDSN(dsn string) error {
 	if strings.TrimSpace(dsn) == "" {
@@ -34,6 +38,14 @@ func InitWithDSN(dsn string) error {
 	DB, err = gorm.Open(dialector, &gorm.Config{})
 	if err != nil {
 		return err
+	}
+	if dialector.Name() == "sqlite" {
+		sqlDB, poolErr := DB.DB()
+		if poolErr != nil {
+			return poolErr
+		}
+		sqlDB.SetMaxOpenConns(1)
+		sqlDB.SetMaxIdleConns(1)
 	}
 	StoreDescription = description
 
@@ -86,10 +98,24 @@ func dialectorForDSN(dsn string) (gorm.Dialector, string, error) {
 			return nil, "", err
 		}
 
-		return sqlite.Open(path), "sqlite:" + path, nil
+		return sqlite.Open(sqliteDSNWithConcurrencyPragmas(path)), "sqlite:" + path, nil
 	}
 
 	return postgres.Open(trimmed), "postgres", nil
+}
+
+func sqliteDSNWithConcurrencyPragmas(dsn string) string {
+	// glebarez/sqlite forwards its DSN to modernc, whose repeated _pragma
+	// parameter is applied whenever the database/sql pool opens a connection.
+	parameters := url.Values{}
+	parameters.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", sqliteBusyTimeoutMilliseconds))
+	parameters.Add("_pragma", "journal_mode(WAL)")
+
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	return dsn + separator + parameters.Encode()
 }
 
 func defaultSQLiteDSN() string {

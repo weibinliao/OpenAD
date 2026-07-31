@@ -6,11 +6,12 @@ import { I18nProvider } from '../../contexts/I18nContext';
 
 jest.mock('next/router', () => ({
   useRouter: () => ({
-    push: jest.fn(),
+    push: mockRouterPush,
     pathname: '/scan-workspace',
   }),
 }));
 
+const mockRouterPush = jest.fn();
 const mockOnPathChange = jest.fn();
 const mockOnScan = jest.fn();
 const mockOnOpenTemplates = jest.fn();
@@ -22,13 +23,13 @@ function createFetchResponse(payload: unknown) {
   } as Response;
 }
 
-function renderConsole() {
+function renderConsole(path = '') {
   return render(
     <I18nProvider>
       <ADConnectionProvider>
         <ScanExplorerConsole
           locale="en"
-          path=""
+          path={path}
           loading={false}
           adReady={false}
           itemsScanned={0}
@@ -60,6 +61,7 @@ describe('ScanExplorerConsole', () => {
     mockOnPathChange.mockClear();
     mockOnScan.mockClear();
     mockOnOpenTemplates.mockClear();
+    mockRouterPush.mockClear();
 
     global.fetch = jest.fn((input: RequestInfo | URL) => {
       const url = String(input);
@@ -145,5 +147,13 @@ describe('ScanExplorerConsole', () => {
     });
 
     await waitFor(() => expect(mockOnScan).toHaveBeenCalledWith('C:\\Data'));
+  });
+
+  test('routes the AD prerequisite action to system settings', async () => {
+    renderConsole('\\\\server\\share');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect AD' }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith('/settings');
   });
 });

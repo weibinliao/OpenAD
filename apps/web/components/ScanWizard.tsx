@@ -497,15 +497,23 @@ export default function ScanWizard({ onStartScan, preferredType }: ScanWizardPro
       </div>
 
       {browseOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-2xl rounded-lg border border-border bg-background shadow-xl">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h4 className="text-base font-semibold">{t('browseTitle')}</h4>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="directory-browser-title"
+            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl"
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+              <h4 id="directory-browser-title" className="text-base font-semibold">{t('browseTitle')}</h4>
               <button type="button" className="rounded px-2 py-1 text-sm hover:bg-secondary" onClick={() => setBrowseOpen(false)}>
                 {t('cancel')}
               </button>
             </div>
-            <div className="space-y-3 p-4">
+            <div
+              data-scroll-region="dialog-body"
+              className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4"
+            >
               <div className="text-sm text-muted-foreground">
                 {t('browseCurrentPath')}: <span className="font-mono text-foreground">{browsePath || '-'}</span>
               </div>
@@ -532,7 +540,7 @@ export default function ScanWizard({ onStartScan, preferredType }: ScanWizardPro
               {browseLoading ? (
                 <div className="text-sm text-muted-foreground">{t('loadingDetails')}</div>
               ) : (
-                <div className="max-h-72 overflow-y-auto rounded border border-border">
+                <div className="rounded border border-border">
                   {browseItems.length === 0 ? (
                     <div className="px-3 py-4 text-sm text-muted-foreground">{t('noSubdirectories')}</div>
                   ) : (

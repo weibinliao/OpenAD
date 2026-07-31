@@ -188,6 +188,56 @@
   background: hsl(var(--surface-base) / 0.94);
 }
 
+.openad-overview-quick-connect {
+  min-width: 0;
+}
+
+.openad-quick-connect-card {
+  max-width: none;
+  border-color: hsl(var(--border-default));
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.openad-quick-connect-card .openad-quick-connect-header {
+  min-height: 42px;
+  padding: 10px 13px;
+  border-bottom: 1px solid hsl(var(--border-default));
+}
+
+.openad-quick-connect-card .openad-quick-connect-header h3 {
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.openad-quick-connect-card .openad-quick-connect-header p {
+  font-size: 8px;
+  line-height: 13px;
+}
+
+@media (min-width: 901px) {
+  .openad-quick-connect-card .openad-quick-connect-content {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(112px, 0.35fr);
+    align-items: end;
+    gap: 10px;
+    padding: 12px 13px;
+  }
+
+  .openad-quick-connect-card .openad-quick-connect-content > * {
+    margin-top: 0;
+  }
+
+  .openad-quick-connect-card .openad-quick-connect-content > p {
+    grid-column: 1 / -1;
+  }
+
+  .openad-quick-connect-card .openad-quick-connect-content > button {
+    grid-column: 4;
+    grid-row: 1;
+  }
+}
+
 .openad-status-item {
   display: flex;
   min-width: 0;
@@ -388,6 +438,72 @@ button.openad-status-item:hover {
   flex-direction: column;
 }
 
+.openad-risk-distribution {
+  padding: 9px 12px 10px;
+  border-bottom: 1px solid hsl(var(--border-default));
+  background: hsl(var(--surface-sunken));
+}
+
+.openad-risk-distribution-title {
+  margin-bottom: 7px;
+  color: hsl(var(--fg-muted));
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 12px;
+  text-transform: uppercase;
+}
+
+.openad-risk-distribution-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.openad-risk-bar {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 6px;
+  color: hsl(var(--fg-muted));
+  font-size: 8px;
+  line-height: 12px;
+}
+
+.openad-risk-bar strong {
+  color: hsl(var(--fg-secondary));
+  font-weight: 700;
+}
+
+.openad-risk-track {
+  height: 4px;
+  grid-column: 1 / -1;
+  overflow: hidden;
+  border-radius: 3px;
+  background: hsl(var(--surface-raised));
+}
+
+.openad-risk-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.openad-risk-fill.is-critical {
+  background: hsl(var(--danger));
+}
+
+.openad-risk-fill.is-high {
+  background: hsl(var(--warning));
+}
+
+.openad-risk-fill.is-medium {
+  background: hsl(var(--accent));
+}
+
+.openad-risk-fill.is-low {
+  background: hsl(var(--success));
+}
+
 .openad-attention-row {
   display: grid;
   min-height: 58px;
@@ -461,7 +577,13 @@ button.openad-status-item:hover {
 
 .openad-activity-table {
   width: 100%;
+  min-width: 560px;
   border-collapse: collapse;
+}
+
+.openad-table-scroll {
+  width: 100%;
+  overflow-x: auto;
 }
 
 .openad-activity-table th,
@@ -740,6 +862,10 @@ button.openad-status-item:hover {
   .openad-overview-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .openad-risk-distribution-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .openad-activity-table th:nth-child(3),

@@ -126,7 +126,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-desktop-wind
 - 用户可见行为变化要更新 `CHANGELOG.md`。
 - 开发命令或前置条件变化要更新 `DEVELOPMENT.md`。
 - 不可逆或跨模块架构决策要增加 ADR。
-- 未经项目所有者明确选择，不得擅自添加开源许可证。
+- 项目所有者已选择 open core 双许可结构：除 `ee/` 外的仓库主体采用 AGPL-3.0，`ee/`
+  采用商业许可。不得擅自修改 `LICENSE`、`LICENSING.md`、`NOTICE`、`ee/LICENSE`、CLA
+  条款或许可边界；任何变更必须由项目所有者明确批准。
 
 ## English Reference
 
@@ -176,4 +178,7 @@ Verification and documentation:
 - Visible desktop changes also require launching the packaged app and checking the window, ports, `/health`, AD connectivity, and all eight resize directions when relevant. For sidebar changes, verify both compact and expanded states have no empty branded header, the pin action appears only in the expanded Workspace tool row, and icons, text, and navigation targets remain visible and usable.
 - Current project governance, development, and maintenance documents are bilingual: complete Chinese content first, corresponding English content second. Historical records may preserve the Chinese original with an English summary. Commands, paths, identifiers, protocol fields, and compatibility filenames remain in English.
 - Update `CHANGELOG.md` for user-visible behavior, `DEVELOPMENT.md` for command or prerequisite changes, and add an ADR for irreversible or cross-module architecture decisions.
-- Do not add an open-source license until the project owner explicitly selects one.
+- The project owner has selected an open-core dual-license structure: the repository body excluding
+  `ee/` uses AGPL-3.0, while `ee/` uses a commercial license. Do not modify `LICENSE`,
+  `LICENSING.md`, `NOTICE`, `ee/LICENSE`, the CLA terms, or the license boundary without explicit
+  approval from the project owner.

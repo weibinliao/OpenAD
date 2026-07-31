@@ -42,6 +42,14 @@ interface ScanPermission {
   group_inheritance_hierarchy?: string;
 }
 
+interface IdentityResolutionSummary {
+  directory_sync_run_id?: string;
+  mode: string;
+  resolved_principal_count: number;
+  unresolved_principal_count: number;
+  warning?: string;
+}
+
 interface SkippedPath {
   path: string;
   error: string;
@@ -56,6 +64,7 @@ interface ScanResponse {
   skipped?: SkippedPath[];
   error?: string;
   status?: string;
+  identity_resolution?: IdentityResolutionSummary;
 }
 
 interface ScanProgressEvent {
@@ -81,23 +90,6 @@ interface LiveScanState {
   error: string;
 }
 
-const legacyExclusionGroupPatterns = [
-  'Everyone',
-  'NT AUTHORITY\\*',
-  'BUILTIN\\Administrators',
-  'BUILTIN\\Users',
-  'BUILTIN\\Guests',
-  'BUILTIN\\Power Users',
-  'BUILTIN\\Account Operators',
-  'BUILTIN\\Server Operators',
-  'BUILTIN\\Print Operators',
-  'BUILTIN\\Backup Operators',
-  'BUILTIN\\Replicators',
-  'Authenticated Users',
-  'Creator Owner',
-  'Creator Group',
-  'Owner Rights',
-];
 
 function text(locale: string, en: string, zh: string) {
   return locale === 'zh-CN' ? zh : en;
@@ -149,6 +141,7 @@ export default function ScanWorkspacePage() {
   const [message, setMessage] = useState('');
   const [results, setResults] = useState<ScanPermission[]>([]);
   const [skippedItems, setSkippedItems] = useState<SkippedPath[]>([]);
+  const [identityResolution, setIdentityResolution] = useState<IdentityResolutionSummary | null>(null);
   const [sessionID, setSessionID] = useState('');
   const [progressTrackedPath, setProgressTrackedPath] = useState('');
   const [itemsScanned, setItemsScanned] = useState(0);
@@ -356,6 +349,7 @@ export default function ScanWorkspacePage() {
     setResults([]);
     setSkippedItems([]);
     setSessionID('');
+    setIdentityResolution(null);
     setItemsScanned(0);
     setProgressTrackedPath(requestedPath);
     setLiveScan({
@@ -372,7 +366,7 @@ export default function ScanWorkspacePage() {
     });
     openScanSocket(scanID, requestedPath);
 
-    const createScanBody = (withEffectivePermissions: boolean) => {
+    const createScanBody = () => {
       const requestedDepth = Number.isFinite(scanDefaults.defaultDepth)
         ? scanDefaults.defaultDepth
         : defaultScanDefaults.defaultDepth;
@@ -383,13 +377,11 @@ export default function ScanWorkspacePage() {
         include_inherited: scanDefaults.includeInherited,
       };
 
-      if (withEffectivePermissions) {
+      if (requestedIsUNC && adReady) {
         nextBody.effective_permissions = activeProfile
           ? {
             enabled: true,
             connection_id: activeProfile.id,
-            exclude_group_patterns: legacyExclusionGroupPatterns,
-            exclude_user_patterns: [],
           }
           : {
             enabled: true,
@@ -397,19 +389,17 @@ export default function ScanWorkspacePage() {
             base_dn: config.baseDN,
             username: config.username,
             password: config.password,
-            exclude_group_patterns: legacyExclusionGroupPatterns,
-            exclude_user_patterns: [],
           };
       }
 
       return nextBody;
     };
 
-    const executeScan = async (withEffectivePermissions: boolean) => {
+    const executeScan = async () => {
       const response = await fetch(`${apiBase()}/api/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(createScanBody(withEffectivePermissions)),
+        body: JSON.stringify(createScanBody()),
       });
       const data = (await response.json()) as ScanResponse;
       if (!response.ok) {
@@ -440,6 +430,7 @@ export default function ScanWorkspacePage() {
       setSkippedItems(nextSkipped);
       setSessionID(nextSessionID);
       setItemsScanned(nextItemsScanned);
+      setIdentityResolution(data.identity_resolution || null);
       setLiveScan((current) => ({
         ...current,
         sessionID: nextSessionID || current.sessionID,
@@ -487,25 +478,13 @@ export default function ScanWorkspacePage() {
     }
 
     try {
-      let data = await executeScan(canUseEffectivePermissions);
+      const data = await executeScan();
       if (data.status === 'cancelled') {
         applyCancelledState();
         return;
       }
 
-      let usedFallbackMode = false;
-      if (
-        canUseEffectivePermissions
-        && Number(data.items_scanned || 0) > 0
-        && (!Array.isArray(data.permissions) || data.permissions.length === 0)
-      ) {
-        data = await executeScan(false);
-        usedFallbackMode = true;
-        if (data.status === 'cancelled') {
-          applyCancelledState();
-          return;
-        }
-      }
+      const usedFallbackMode = data.identity_resolution?.mode === 'raw-fallback';
 
       const { nextResults, nextSkipped } = applySuccessfulResult(data);
       setMessage(usedFallbackMode
@@ -534,69 +513,6 @@ export default function ScanWorkspacePage() {
       );
     } catch (requestError) {
       const nextError = requestError instanceof Error ? requestError.message : 'Scan failed';
-      const shouldRetryWithoutAD = canUseEffectivePermissions && (
-        nextError.toLowerCase().includes('effective permission')
-        || nextError.toLowerCase().includes('invalid credential')
-        || nextError.toLowerCase().includes('ldap result code 49')
-      );
-
-      if (shouldRetryWithoutAD) {
-        try {
-          const fallbackData = await executeScan(false);
-          if (fallbackData.status === 'cancelled') {
-            applyCancelledState();
-            return;
-          }
-
-          const { nextResults, nextSkipped } = applySuccessfulResult(fallbackData);
-          setMessage(text(
-            locale,
-            'AD expansion failed, so the scan completed with the directory ACL dataset.',
-            'AD 展开失败，扫描已使用目录 ACL 数据集完成。',
-          ));
-          setError('');
-          appendOperationLog(
-            {
-              scope: 'scan',
-              action: 'run-scan-fallback',
-              message: text(
-                locale,
-                'AD expansion failed and the scan used raw ACL results.',
-                'AD 展开失败，扫描已使用原始 ACL 结果。',
-              ),
-              context: {
-                path: requestedPath,
-                originalError: nextError,
-                permissions: nextResults.length,
-                skipped: nextSkipped.length,
-              },
-            },
-            workspaceSettings.auditLogging,
-          );
-          return;
-        } catch (fallbackError) {
-          const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : nextError;
-          setError(fallbackMessage);
-          setLiveScan((current) => ({
-            ...current,
-            status: 'failed',
-            error: fallbackMessage,
-            lastUpdatedAt: Date.now(),
-            liveConnected: false,
-          }));
-          appendOperationLog(
-            {
-              scope: 'scan',
-              action: 'run-scan-failed',
-              message: fallbackMessage,
-              context: { path: requestedPath, unc: requestedIsUNC, adReady },
-            },
-            workspaceSettings.auditLogging,
-          );
-          return;
-        }
-      }
-
       setError(nextError);
       setLiveScan((current) => ({
         ...current,
@@ -704,6 +620,7 @@ export default function ScanWorkspacePage() {
             permissionCount={results.length}
             skippedCount={skippedItems.length}
             riskCount={riskCount}
+            identityResolution={identityResolution}
             onRescan={() => void runScan(normalizedPath)}
           />
         ) : null}

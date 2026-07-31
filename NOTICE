@@ -1,0 +1,16 @@
+OpenAD
+Copyright (C) 2026 Weibin Liao
+
+除 `ee/` 目录和另有自身声明的第三方材料外，OpenAD 采用 GNU Affero
+General Public License version 3。详见 LICENSE 与 LICENSING.md。
+
+`ee/` 被排除在 AGPL-3.0 授权之外，适用 ee/LICENSE 中的商业条款。
+第三方组件保留其自身许可证和归属要求。
+
+Except for the `ee/` directory and third-party materials carrying their own notices,
+OpenAD is licensed under the GNU Affero General Public License version 3.
+See LICENSE and LICENSING.md.
+
+The `ee/` directory is excluded from the AGPL-3.0 grant and is subject to the
+commercial terms in ee/LICENSE. Third-party components retain their own licenses
+and attribution requirements.

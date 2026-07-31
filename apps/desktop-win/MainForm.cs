@@ -30,7 +30,8 @@ internal sealed class MainForm : Form
         webView.Dock = DockStyle.Fill;
         webView.Visible = false;
         Controls.Add(webView);
-        startupExperience = new StartupExperienceControl();
+        startupExperience = new StartupExperienceControl(
+            StartupLocaleStore.Resolve(runtime.DataDirectory));
         startupExperience.RetryRequested += async (_, _) => await BootAsync();
         startupExperience.MinimizeRequested += (_, _) => WindowState = FormWindowState.Minimized;
         startupExperience.CloseRequested += (_, _) => Close();
@@ -83,6 +84,13 @@ internal sealed class MainForm : Form
 
     protected override void WndProc(ref Message m)
     {
+        if (SingleInstanceActivation.IsActivationMessage(m.Msg))
+        {
+            RestoreAndActivate();
+            m.Result = IntPtr.Zero;
+            return;
+        }
+
         if (NativeWindowChrome.TrySuppressNonClientFrame(ref m))
         {
             return;
@@ -100,6 +108,19 @@ internal sealed class MainForm : Form
         }
 
         base.WndProc(ref m);
+    }
+
+    private void RestoreAndActivate()
+    {
+        if (WindowState == FormWindowState.Minimized)
+        {
+            WindowState = FormWindowState.Normal;
+        }
+
+        Show();
+        BringToFront();
+        Activate();
+        SingleInstanceActivation.RestoreAndActivateWindow(Handle);
     }
 
     private async Task BootAsync()
@@ -139,7 +160,10 @@ internal sealed class MainForm : Form
         {
             if (e.IsSuccess)
             {
-                await startupExperience.CompleteAsync();
+                if (!await startupExperience.CompleteAsync())
+                {
+                    return;
+                }
                 startupExperience.Visible = false;
                 webView.Visible = true;
                 webView.Focus();
@@ -162,13 +186,20 @@ internal sealed class MainForm : Form
                 return;
             }
 
-            if (typeElement.GetString() == "permission-protector-branding")
+            var messageType = typeElement.GetString();
+            if (messageType == "permission-protector-branding")
             {
                 ApplyRuntimeBranding(root);
                 return;
             }
 
-            if (typeElement.GetString() != "permission-protector-window")
+            if (messageType == "permission-protector-locale")
+            {
+                ApplyRuntimeLocale(root);
+                return;
+            }
+
+            if (messageType != "permission-protector-window")
             {
                 return;
             }
@@ -240,6 +271,14 @@ internal sealed class MainForm : Form
         if (DesktopBranding.TryCreateRuntimeIcon(logoDataUrl, out var icon) && icon is not null)
         {
             ReplaceWindowIcon(icon);
+        }
+    }
+
+    private void ApplyRuntimeLocale(JsonElement message)
+    {
+        if (TryGetString(message, "locale", out var locale))
+        {
+            StartupLocaleStore.TryPersist(runtime.DataDirectory, locale);
         }
     }
 

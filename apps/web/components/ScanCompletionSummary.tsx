@@ -12,6 +12,11 @@ export interface ScanCompletionSummaryProps {
   permissionCount: number;
   skippedCount: number;
   riskCount: number;
+  identityResolution?: {
+    mode: string;
+    resolved_principal_count: number;
+    unresolved_principal_count: number;
+  } | null;
   onRescan: () => void;
 }
 
@@ -25,6 +30,12 @@ const copy = {
     skipped: 'Skipped',
     risks: 'Risk findings',
     session: 'Session',
+    snapshot: 'Snapshot resolved',
+    snapshotLdap: 'Snapshot + LDAP',
+    ldap: 'LDAP resolved',
+    rawFallback: 'Raw ACL fallback',
+    resolved: (count: number) => `${count} resolved`,
+    unresolved: (count: number) => `${count} unresolved`,
     evidence: 'View permission evidence',
     findings: 'View risk findings',
     history: 'Open scan history',
@@ -40,6 +51,12 @@ const copy = {
     skipped: '跳过路径',
     risks: '风险发现',
     session: '会话',
+    snapshot: '快照解析',
+    snapshotLdap: '快照 + LDAP',
+    ldap: 'LDAP 解析',
+    rawFallback: '原始 ACL 回退',
+    resolved: (count: number) => `${count} 个已解析`,
+    unresolved: (count: number) => `${count} 个未解析`,
     evidence: '查看权限证据',
     findings: '查看风险项',
     history: '查看本次记录',
@@ -56,10 +73,17 @@ export default function ScanCompletionSummary({
   permissionCount,
   skippedCount,
   riskCount,
+  identityResolution,
   onRescan,
 }: ScanCompletionSummaryProps) {
   const router = useRouter();
   const labels = copy[locale];
+  const resolutionLabel = identityResolution ? ({
+    snapshot: labels.snapshot,
+    'snapshot+ldap': labels.snapshotLdap,
+    ldap: labels.ldap,
+    'raw-fallback': labels.rawFallback,
+  } as Record<string, string>)[identityResolution.mode] || identityResolution.mode : '';
   const facts = [
     { label: labels.objects, value: itemsScanned },
     { label: labels.acl, value: permissionCount },
@@ -82,7 +106,18 @@ export default function ScanCompletionSummary({
             <p className="mt-1 text-xs leading-5 text-fg-muted">{labels.description}</p>
           </div>
         </div>
-        {sessionID ? <Badge tone="neutral" className="font-mono">{labels.session}: {sessionID}</Badge> : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          {identityResolution ? (
+            <>
+              <Badge tone={identityResolution.mode === 'raw-fallback' ? 'warning' : 'success'}>{resolutionLabel}</Badge>
+              <Badge tone="neutral">{labels.resolved(identityResolution.resolved_principal_count)}</Badge>
+              {identityResolution.unresolved_principal_count > 0
+                ? <Badge tone="warning">{labels.unresolved(identityResolution.unresolved_principal_count)}</Badge>
+                : null}
+            </>
+          ) : null}
+          {sessionID ? <Badge tone="neutral" className="font-mono">{labels.session}: {sessionID}</Badge> : null}
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">

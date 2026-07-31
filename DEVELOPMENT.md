@@ -65,6 +65,11 @@ API 默认地址为 `http://127.0.0.1:18080`。健康检查：
 Invoke-RestMethod http://127.0.0.1:18080/health
 ```
 
+扫描服务默认最多同时运行 1 个扫描，以避免 NTFS 磁盘 IO 和 SQLite 写锁互相放大。可用
+`PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS` 设置大于等于 1 的整数；旧部署可继续使用兼容变量
+`FSA_MAX_CONCURRENT_SCANS`，主变量存在时优先。达到上限的扫描请求会立即返回 HTTP 409，不会在
+后台无限排队。调整该值会增加磁盘和数据库争用，需在重启 API 后生效并结合实际目录负载验证。
+
 本地应用数据为了兼容保存在 `%APPDATA%\PermissionProtector`。禁止把真实凭据或目录
 导出数据提交到 Git。
 
@@ -77,7 +82,9 @@ Invoke-RestMethod http://127.0.0.1:18080/health
 & .\tools\node\npm.cmd --prefix .\apps\web run build:static
 ```
 
-开发界面地址为 `http://localhost:3010`。静态导出写入 `apps/web/out`，该目录已忽略。
+开发界面地址为 `http://127.0.0.1:3010`。API、Next.js 开发服务器和兼容静态 Web 服务默认都只监听 `127.0.0.1`；空 `ALLOW_ORIGINS` 只允许本机 `3010` 与 `43110` Web 来源。静态导出写入 `apps/web/out`，该目录已忽略。
+
+需要在可信管理网络上显式启用浏览器模式时，以管理员身份运行 `scripts\enable-lan-access.bat`，把输出命令中的 `your-host-ip` 替换为实际 LAN 地址后执行。该命令只对本次启动设置全网卡绑定与精确 CORS/WebSocket Origin；普通启动不会持久化 LAN 暴露。OpenAD 当前没有产品级登录或 RBAC，禁止用于公网或不可信网络。
 
 ## Windows 桌面端
 
@@ -204,6 +211,13 @@ The API defaults to `http://127.0.0.1:18080`. Health check:
 Invoke-RestMethod http://127.0.0.1:18080/health
 ```
 
+The scan service runs at most one scan concurrently by default to avoid compounding NTFS disk I/O and
+SQLite write-lock contention. Set `PERMISSION_PROTECTOR_MAX_CONCURRENT_SCANS` to an integer of 1 or
+greater; existing deployments may keep using the compatibility variable `FSA_MAX_CONCURRENT_SCANS`,
+while the primary variable takes precedence when both are present. Requests above the limit return
+HTTP 409 immediately instead of waiting in an unbounded queue. Higher values increase disk and database
+contention and take effect after the API restarts, so validate them against representative directories.
+
 For compatibility, local application data remains under `%APPDATA%\PermissionProtector`. Never commit real credentials or directory exports.
 
 ### Web Development
@@ -215,7 +229,9 @@ For compatibility, local application data remains under `%APPDATA%\PermissionPro
 & .\tools\node\npm.cmd --prefix .\apps\web run build:static
 ```
 
-The development UI is available at `http://localhost:3010`. Static export writes to the ignored `apps/web/out` directory.
+The development UI is available at `http://127.0.0.1:3010`. The API, Next.js development server, and compatibility static Web server all bind only to `127.0.0.1` by default. With an empty `ALLOW_ORIGINS`, only local Web origins on ports `3010` and `43110` are allowed. Static export writes to the ignored `apps/web/out` directory.
+
+To enable browser mode explicitly on a trusted administration network, run `scripts\enable-lan-access.bat` as Administrator, replace `your-host-ip` in the printed command with the actual LAN address, and execute it. The command enables all-interface binding and exact CORS/WebSocket Origin only for that launch; normal launches do not persist LAN exposure. OpenAD has no product-level login or RBAC and must not be used on the public internet or an untrusted network.
 
 ### Windows Desktop
 

@@ -10,6 +10,13 @@ internal static class Program
             return RunSmokeCheck();
         }
 
+        using var singleInstance = SingleInstanceLock.TryAcquire();
+        if (singleInstance is null)
+        {
+            SingleInstanceActivation.RequestExistingWindow();
+            return 0;
+        }
+
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());
         return 0;

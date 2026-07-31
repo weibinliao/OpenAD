@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import IdentityPage from '../../pages/identity';
 import { I18nProvider } from '../../contexts/I18nContext';
@@ -54,5 +54,15 @@ describe('IdentityPage desktop workflow', () => {
     expect(workbench).toHaveTextContent('query: alex');
     expect(workbench.compareDocumentPosition(snapshot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryAllByRole('tab')).toHaveLength(0);
+  });
+
+  test('shows a retry action when the directory snapshot status cannot be loaded', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('offline')) as jest.MockedFunction<typeof fetch>;
+
+    render(<I18nProvider><IdentityPage /></I18nProvider>);
+
+    expect(await screen.findByText('Directory snapshot unavailable')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
   });
 });

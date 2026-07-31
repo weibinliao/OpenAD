@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { PlugZap, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { apiBase } from '../lib/runtimeApi';
+import { cn } from '../lib/cn';
 import { useDict } from '../lib/i18n';
 import { useADConnection } from '../contexts/ADConnectionContext';
 import { Card, CardContent, CardHeader } from './ui/card';
@@ -13,7 +14,7 @@ import { Input, Label, FieldHint } from './ui/input';
  * the Base DN is auto-discovered server-side. On success the new profile is
  * created, set active, and onConnected() fires so the page can reveal itself.
  */
-export function QuickConnectCard({ onConnected }: { onConnected?: () => void }) {
+export function QuickConnectCard({ onConnected, className }: { onConnected?: () => void; className?: string }) {
   const d = useDict();
   const { refreshProfiles, setActiveProfileId } = useADConnection();
   const [server, setServer] = useState('');
@@ -67,8 +68,9 @@ export function QuickConnectCard({ onConnected }: { onConnected?: () => void }) 
   };
 
   return (
-    <Card className="mx-auto max-w-lg">
+    <Card className={cn('mx-auto max-w-lg', className)}>
       <CardHeader
+        className="openad-quick-connect-header"
         title={
           <span className="inline-flex items-center gap-2">
             <PlugZap className="h-4 w-4 text-accent-fg" /> {d.quickConnect.title}
@@ -76,7 +78,7 @@ export function QuickConnectCard({ onConnected }: { onConnected?: () => void }) 
         }
         description={d.quickConnect.subtitle}
       />
-      <CardContent className="space-y-3">
+      <CardContent className="openad-quick-connect-content space-y-3">
         <div>
           <Label htmlFor="qc-server">{d.settings.fieldServer}</Label>
           <Input

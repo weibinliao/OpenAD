@@ -32,6 +32,7 @@ func (application *application) router() *gin.Engine {
 	router.POST("/api/ad/users/query/async", application.handleADUserQueryAsync)
 	router.POST("/api/ad/groups/query", application.handleADGroupQuery)
 	router.POST("/api/ad/groups/members", application.handleADGroupMembers)
+	router.POST("/api/ad/groups/members/export", application.handleADGroupMembersExport)
 	router.POST("/api/ad/principals/expand", application.handleADPrincipalExpand)
 	router.POST("/api/ad/tree", application.handleADTree)
 	router.POST("/api/ad/tree/explain", application.handleADTreeExplain)

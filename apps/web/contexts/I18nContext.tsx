@@ -554,6 +554,14 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     if (localeInitialized && typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_KEY, locale);
       document.documentElement.lang = locale;
+      try {
+        window.chrome?.webview?.postMessage({
+          type: 'permission-protector-locale',
+          locale,
+        });
+      } catch {
+        // Locale persistence must remain available when the desktop bridge is absent or closing.
+      }
     }
   }, [locale, localeInitialized]);
 

@@ -5,11 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/weibinliao/OpenAD/internal/database"
-	"github.com/weibinliao/OpenAD/internal/models"
+	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weibinliao/OpenAD/internal/database"
+	"github.com/weibinliao/OpenAD/internal/models"
+	"gorm.io/gorm"
 )
 
 func TestListSessionsAppliesFiltersAndPagination(t *testing.T) {
@@ -152,6 +154,117 @@ func TestGetSessionBundleReturnsSessionAndPermissions(t *testing.T) {
 	assert.Equal(t, permissions[0].Trustee, response.Permissions[0].Trustee)
 	assert.Equal(t, permissions[0].OriginatingGroup, response.Permissions[0].OriginatingGroup)
 	assert.Equal(t, permissions[0].Email, response.Permissions[0].Email)
+}
+
+func TestGetSessionBundleEnrichesLegacyPermissionsWithoutMutatingStoredRows(t *testing.T) {
+	db := newHistoryResolverDB(t)
+	startedAt := time.Now().UTC()
+	run := seedHistoryRun(t, db, startedAt.Add(-time.Hour))
+	require.NoError(t, db.Create(&models.ADUserRecord{
+		RunID: run.ID, SID: "S-1-5-21-1-2-3-1001", SAMAccountName: "alice", DisplayName: "Alice Adams",
+	}).Error)
+
+	session := models.ScanSession{ID: uuid.New(), RootPath: `C:\Share`, Status: "completed", StartedAt: startedAt}
+	stored := []models.Permission{{
+		ID: uuid.New(), ScanSessionID: session.ID, Path: `C:\Share`, Trustee: "S-1-5-21-1-2-3-1001",
+		TrusteeSID: "S-1-5-21-1-2-3-1001", Rights: "Read", Type: "Allow",
+	}}
+	repository := &stubHistoryRepository{
+		sessions:               []models.ScanSession{session},
+		permissionsBySessionID: map[uuid.UUID][]models.Permission{session.ID: stored},
+	}
+	service := NewWithRepositoryAndDatabase(repository, db)
+
+	bundle, err := service.GetSessionBundle(session.ID.String())
+
+	require.NoError(t, err)
+	assert.Equal(t, run.ID, bundle.IdentityResolution.DirectorySyncRunID)
+	assert.Equal(t, "legacy_inferred_before_scan", bundle.IdentityResolution.Inference)
+	require.Len(t, bundle.Permissions, 1)
+	assert.Equal(t, "Alice Adams", bundle.Permissions[0].Trustee)
+	assert.Equal(t, "snapshot", bundle.Permissions[0].ResolutionSource)
+	assert.Equal(t, "S-1-5-21-1-2-3-1001", repository.permissionsBySessionID[session.ID][0].Trustee)
+	assert.Empty(t, repository.permissionsBySessionID[session.ID][0].ResolutionSource)
+}
+
+func TestSelectLegacyRunPrefersHighestSIDCoverageBeforeScan(t *testing.T) {
+	db := newHistoryResolverDB(t)
+	scanTime := time.Now().UTC()
+	older := seedHistoryRun(t, db, scanTime.Add(-2*time.Hour))
+	better := seedHistoryRun(t, db, scanTime.Add(-time.Hour))
+	seedHistoryRun(t, db, scanTime.Add(time.Hour))
+	require.NoError(t, db.Create(&models.ADUserRecord{RunID: older.ID, SID: "S-1-5-21-a"}).Error)
+	require.NoError(t, db.Create(&[]models.ADUserRecord{
+		{RunID: better.ID, SID: "S-1-5-21-a"},
+		{RunID: better.ID, SID: "S-1-5-21-b"},
+	}).Error)
+
+	run, inference, err := selectLegacyRun(db, models.ScanSession{StartedAt: scanTime}, []models.Permission{
+		{TrusteeSID: "S-1-5-21-a"},
+		{TrusteeSID: "S-1-5-21-b"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, run)
+	assert.Equal(t, better.ID, run.ID)
+	assert.Equal(t, "legacy_inferred_before_scan", inference)
+}
+
+func TestSelectLegacyRunUsesEarliestSnapshotAfterScan(t *testing.T) {
+	db := newHistoryResolverDB(t)
+	scanTime := time.Now().UTC()
+	earliest := seedHistoryRun(t, db, scanTime.Add(time.Hour))
+	seedHistoryRun(t, db, scanTime.Add(2*time.Hour))
+
+	run, inference, err := selectLegacyRun(db, models.ScanSession{StartedAt: scanTime}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, run)
+	assert.Equal(t, earliest.ID, run.ID)
+	assert.Equal(t, "legacy_inferred_after_scan", inference)
+}
+
+func TestSelectLegacyRunTreatsSnapshotCompletedAfterScanAsLater(t *testing.T) {
+	db := newHistoryResolverDB(t)
+	scanTime := time.Now().UTC()
+	completedBefore := seedHistoryRun(t, db, scanTime.Add(-2*time.Hour))
+	finishedAfter := scanTime.Add(30 * time.Minute)
+	overlapping := models.DirectorySyncRun{
+		ConnectionID: uuid.New(),
+		Status:       "completed",
+		StartedAt:    scanTime.Add(-time.Hour),
+		FinishedAt:   &finishedAfter,
+	}
+	require.NoError(t, db.Create(&overlapping).Error)
+	require.NoError(t, db.Create(&[]models.ADUserRecord{
+		{RunID: completedBefore.ID, SID: "S-1-5-21-a"},
+		{RunID: overlapping.ID, SID: "S-1-5-21-a"},
+	}).Error)
+
+	run, inference, err := selectLegacyRun(db, models.ScanSession{StartedAt: scanTime}, []models.Permission{
+		{TrusteeSID: "S-1-5-21-a"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, run)
+	assert.Equal(t, completedBefore.ID, run.ID)
+	assert.Equal(t, "legacy_inferred_before_scan", inference)
+}
+
+func newHistoryResolverDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.DirectorySyncRun{}, &models.ADUserRecord{}, &models.ADGroupRecord{}, &models.ADMembershipRecord{}))
+	return db
+}
+
+func seedHistoryRun(t *testing.T, db *gorm.DB, startedAt time.Time) models.DirectorySyncRun {
+	t.Helper()
+	finishedAt := startedAt.Add(time.Minute)
+	run := models.DirectorySyncRun{ConnectionID: uuid.New(), Status: "completed", StartedAt: startedAt, FinishedAt: &finishedAt}
+	require.NoError(t, db.Create(&run).Error)
+	return run
 }
 
 func TestListSessionPermissionsAppliesFiltersAndPagination(t *testing.T) {

@@ -241,6 +241,25 @@ export function summarizeRiskFindings(items = readRiskFindings()): RiskFindingSu
   };
 }
 
+export function severityRank(severity: RiskFindingSeverity): number {
+  switch (severity) {
+    case 'critical':
+      return 400;
+    case 'high':
+      return 300;
+    case 'medium':
+      return 200;
+    case 'low':
+      return 100;
+  }
+}
+
+export function sortRiskFindingsByPriority<T extends Pick<RiskFinding, 'priorityScore' | 'severity'>>(items: readonly T[]): T[] {
+  return [...items].sort(
+    (a, b) => (b.priorityScore ?? severityRank(b.severity)) - (a.priorityScore ?? severityRank(a.severity)),
+  );
+}
+
 export function upsertRiskFindingsFromScan({
   permissions,
   sessionID,

@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/weibinliao/OpenAD/internal/models"
-	"github.com/weibinliao/OpenAD/internal/scanner"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weibinliao/OpenAD/internal/models"
+	"github.com/weibinliao/OpenAD/internal/scanner"
 )
 
 func TestPermissionExpanderExpandsGroupsAndExcludesUsers(t *testing.T) {
@@ -238,6 +238,20 @@ func TestPermissionExpanderEnrichesDirectPermissionFromTrusteeSID(t *testing.T) 
 	assert.Equal(t, userSID, expanded[0].TrusteeSID)
 	assert.Equal(t, "alice", expanded[0].AccountName)
 	assert.Equal(t, "alice@example.com", expanded[0].Email)
+}
+
+func TestPermissionExpanderDoesNotSearchGroupsAfterCancellation(t *testing.T) {
+	searcher := &stubGroupSearcher{}
+	expander := NewPermissionExpander(newFakeGroupDirectory(), searcher)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	group, found, err := expander.findGroupForTrustee(ctx, "Finance")
+
+	assert.Nil(t, group)
+	assert.False(t, found)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Zero(t, searcher.calls)
 }
 
 type sidResolvingDirectory struct {

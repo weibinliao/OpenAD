@@ -2,6 +2,8 @@
 
 [中文](#openad) | [English](#english)
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+
 OpenAD 是一款面向 Windows 的 IT 运维桌面应用，用于统一查看 Active Directory 身份
 与 NTFS/网络共享权限。它帮助运维人员回答：哪个用户或组可以访问某个资源、权限来自
 直接授权还是嵌套组关系，以及具体原因是什么。
@@ -40,6 +42,7 @@ apps/web               Next.js 产品界面和静态导出
 apps/desktop-win       当前交付的 .NET WebView2 Windows 桌面壳
 apps/desktop-win.tests 桌面运行时、品牌、启动和缩放测试
 apps/desktop           历史 Tauri 探索，不是当前桌面交付物
+ee                     商业功能保留目录，适用独立商业许可
 docs                   产品、工程、发行和运维文档
 scripts                构建、启动、验证和清理脚本
 tools                  已忽略的便携 Go/Node 工具链
@@ -100,7 +103,10 @@ $env:PERMISSION_PROTECTOR_DATA_DIR = "$env:APPDATA\PermissionProtector"
 
 ## 许可证状态
 
-项目尚未选择顶层开源许可证。对外发布前必须由项目所有者明确选择并批准许可证。
+OpenAD 采用 open core 双许可结构。除 `ee/` 和另有自身许可声明的第三方材料外，仓库主体
+按 [GNU AGPL-3.0](LICENSE) 提供；`ee/` 被明确排除在该授权之外，并适用
+[商业许可条款](ee/LICENSE)。许可边界、AGPL 实际义务和商业授权场景见
+[许可说明](LICENSING.md)。
 
 ## English
 
@@ -137,6 +143,7 @@ apps/web               Next.js product interface and static export
 apps/desktop-win       Shipping .NET WebView2 Windows desktop host
 apps/desktop-win.tests Desktop runtime, branding, startup, and resize tests
 apps/desktop           Historical Tauri exploration, not the shipping desktop app
+ee                     Reserved commercial-feature directory under a separate commercial license
 docs                   Product, engineering, release, and operations documentation
 scripts                Build, startup, verification, and cleanup scripts
 tools                  Ignored portable Go and Node toolchains
@@ -187,4 +194,8 @@ See `SECURITY.md` for vulnerability reporting guidance and `docs/OPEN_SOURCE_REL
 
 ### License Status
 
-The project does not yet have a top-level open-source license. The project owner must explicitly select and approve one before public release.
+OpenAD uses an open-core dual-license structure. Except for `ee/` and third-party materials carrying
+their own notices, the repository is available under the [GNU AGPL-3.0](LICENSE). The `ee/` directory
+is expressly excluded from that grant and is governed by the [commercial license terms](ee/LICENSE).
+See the [licensing guide](LICENSING.md) for the license boundary, practical AGPL obligations, and
+commercial authorization scenarios.

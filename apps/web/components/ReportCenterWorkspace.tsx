@@ -40,6 +40,12 @@ interface ScanSession {
   finished_at?: string;
 }
 
+interface IdentityResolutionSummary {
+  mode: string;
+  resolved_principal_count?: number;
+  unresolved_principal_count?: number;
+}
+
 interface SummaryTemplate {
   id: string;
   name: string;
@@ -145,6 +151,17 @@ function normalizePermission(item: PermissionReportItem): PermissionReportItem {
   };
 }
 
+function identityResolutionLabel(locale: string, resolution: IdentityResolutionSummary) {
+  const labels: Record<string, [string, string]> = {
+    snapshot: ['Snapshot resolved', '快照解析'],
+    'snapshot+ldap': ['Snapshot + LDAP', '快照 + LDAP'],
+    ldap: ['LDAP resolved', 'LDAP 解析'],
+    'raw-fallback': ['Raw ACL fallback', '原始 ACL 回退'],
+  };
+  const label = labels[resolution.mode];
+  return label ? text(locale, label[0], label[1]) : resolution.mode;
+}
+
 export default function ReportCenterWorkspace() {
   const router = useRouter();
   const { locale } = useI18n();
@@ -154,6 +171,7 @@ export default function ReportCenterWorkspace() {
   const [sessionID, setSessionID] = useState('');
   const [activeSession, setActiveSession] = useState<ScanSession | null>(null);
   const [permissions, setPermissions] = useState<PermissionReportItem[]>([]);
+  const [identityResolution, setIdentityResolution] = useState<IdentityResolutionSummary | null>(null);
   const [mode, setMode] = useState<QuickReportMode>('user');
   const [trusteeFilter, setTrusteeFilter] = useState('');
   const [pathFilter, setPathFilter] = useState('');
@@ -165,7 +183,7 @@ export default function ReportCenterWorkspace() {
   const [defaults, setDefaults] = useState<ReportDefaults>(initialDefaults);
   const [previewMarkdown, setPreviewMarkdown] = useState('');
   const [message, setMessage] = useState('');
-  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
   const [datasetLoading, setDatasetLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [exporting, setExporting] = useState<ExportFormat | ''>('');
@@ -243,6 +261,7 @@ export default function ReportCenterWorkspace() {
   const loadBundle = useCallback(async (targetSession: string) => {
     if (!targetSession) return;
     setDatasetLoading(true);
+    setIdentityResolution(null);
     setError('');
     setMessage('');
     try {
@@ -254,12 +273,14 @@ export default function ReportCenterWorkspace() {
       loadedSession.current = targetSession;
       setActiveSession(data.session as ScanSession);
       setPermissions(rows);
+      setIdentityResolution(data.identity_resolution || null);
       setSelectedKey('');
       setSelectedPath((current) => current || requestedPath || data.session.root_path || rows[0]?.path || '');
     } catch (requestError) {
       loadedSession.current = '';
       setActiveSession(null);
       setPermissions([]);
+      setIdentityResolution(null);
       setError(requestError instanceof Error ? requestError.message : text(locale, 'Session data unavailable.', '会话数据不可用。'));
     } finally {
       setDatasetLoading(false);
@@ -435,9 +456,12 @@ export default function ReportCenterWorkspace() {
             {text(locale, 'Create user, folder and owner reports from the latest scan or any completed historical session.', '从最近扫描或任一已完成历史会话生成用户、文件夹和所有者报告。')}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Badge tone={permissions.length ? 'success' : 'neutral'}>{permissions.length ? text(locale, `${permissions.length} permission rows`, `${permissions.length} 条权限记录`) : text(locale, 'Awaiting dataset', '等待数据集')}</Badge>
           <Badge tone={adReady ? 'success' : 'warning'}>{adReady ? text(locale, 'AD context ready', 'AD 上下文就绪') : text(locale, 'AD context optional', 'AD 上下文可选')}</Badge>
+          {identityResolution
+            ? <Badge tone={identityResolution.mode === 'raw-fallback' ? 'warning' : 'success'}>{identityResolutionLabel(locale, identityResolution)}</Badge>
+            : null}
         </div>
       </header>
 
@@ -451,6 +475,7 @@ export default function ReportCenterWorkspace() {
                 disabled={sessionsLoading}
                 onChange={(event) => {
                   loadedSession.current = '';
+                  setIdentityResolution(null);
                   setSessionID(event.target.value);
                 }}
               >

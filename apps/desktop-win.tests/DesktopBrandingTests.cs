@@ -42,7 +42,12 @@ public sealed class DesktopBrandingTests
         Assert.DoesNotContain("'PermissionProtector Windows Desktop'", buildScript, StringComparison.Ordinal);
         Assert.Contains("OpenAD-Windows-Desktop-v", buildScript, StringComparison.Ordinal);
         Assert.DoesNotContain("PermissionProtector-Windows-Desktop-v", buildScript, StringComparison.Ordinal);
-        Assert.Contains("compatibility filename", buildScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Double-click OpenAD.exe", buildScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("PermissionProtector.exe", buildScript, StringComparison.Ordinal);
+        // The active data directory must be OpenAD. The legacy path may still appear, but only
+        // in the sentence explaining the one-time automatic migration.
+        Assert.Contains("%APPDATA%\\OpenAD", buildScript, StringComparison.Ordinal);
+        Assert.Contains("migrated automatically", buildScript, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -50,10 +55,15 @@ public sealed class DesktopBrandingTests
     {
         var projectDirectory = FindProjectDirectory();
         var startupControlPath = Path.Combine(projectDirectory, "StartupExperienceControl.cs");
-        var source = File.ReadAllText(startupControlPath);
+        var startupStringsPath = Path.Combine(projectDirectory, "StartupExperienceStrings.cs");
+        var source = File.ReadAllText(startupControlPath) + File.ReadAllText(startupStringsPath);
+        var english = StartupExperienceStrings.For(StartupExperienceLocale.English);
+        var chinese = StartupExperienceStrings.For(StartupExperienceLocale.SimplifiedChinese);
 
-        Assert.Contains("\"LOCAL RUNTIME\"", source, StringComparison.Ordinal);
+        Assert.Equal("LOCAL RUNTIME", english.LocalRuntime);
+        Assert.Equal("本地运行时", chinese.LocalRuntime);
         Assert.DoesNotContain("RuntimeProjectName", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"PermissionProtector", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -74,7 +84,7 @@ public sealed class DesktopBrandingTests
     [Fact]
     public void AppliesEmbeddedExecutableIconToDesktopWindow()
     {
-        var executablePath = Path.Combine(AppContext.BaseDirectory, "PermissionProtector.exe");
+        var executablePath = Path.Combine(AppContext.BaseDirectory, "OpenAD.exe");
         Assert.True(File.Exists(executablePath), $"Missing desktop executable: {executablePath}");
 
         using var expectedIcon = Icon.ExtractAssociatedIcon(executablePath)

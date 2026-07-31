@@ -92,6 +92,11 @@ describe('ReportCenterWorkspace', () => {
               account_name: 'alice',
               department: 'Finance',
             }],
+            identity_resolution: {
+              mode: 'snapshot',
+              resolved_principal_count: 1,
+              unresolved_principal_count: 0,
+            },
           }),
         } as Response;
       }
@@ -131,6 +136,7 @@ describe('ReportCenterWorkspace', () => {
     expect(screen.getByRole('heading', { name: 'Report Center' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Scan data source' })).toHaveValue('session-1'));
     expect(screen.getByText('AD context ready')).toBeInTheDocument();
+    expect(screen.getByText('Snapshot resolved')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Owner Review' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'Report results' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByText('Report workspace')).not.toBeInTheDocument();

@@ -966,13 +966,13 @@ export default function ScanExplorerConsole({
                   <div className="text-sm font-semibold text-fg">{text(locale, 'AD connection module', 'AD 连接模块')}</div>
                   <div className="mt-1 text-xs leading-5 text-fg-muted">
                     {connection.connected
-                      ? text(locale, 'Connection is verified. Open the AD workspace to review domain context or retest credentials.', '连接已验证。可进入 AD 工作区查看域上下文或重新测试凭据。')
+                      ? text(locale, 'Connection is verified. Open System Settings to review domain context or retest credentials.', '连接已验证。可进入系统设置查看域上下文或重新测试凭据。')
                       : text(locale, 'Connect AD before UNC identity expansion or domain-aware permission review.', '在进行 UNC 身份展开或带域上下文的权限复核前，请先连接 AD。')}
                   </div>
                 </div>
               </div>
-              <Button type="button" onClick={() => void router.push('/ad-workspace')} variant="secondary" size="sm" className="self-start">
-                {connection.connected ? text(locale, 'Open AD Workspace', '打开 AD 工作区') : text(locale, 'Connect AD', '连接 AD')}
+              <Button type="button" onClick={() => void router.push('/settings')} variant="secondary" size="sm" className="self-start">
+                {connection.connected ? text(locale, 'Open System Settings', '打开系统设置') : text(locale, 'Connect AD', '连接 AD')}
               </Button>
             </div>
 
@@ -1004,8 +1004,8 @@ export default function ScanExplorerConsole({
 
                 <div className="mt-3 rounded-md border border-line bg-surface-sunken px-3 py-2 text-xs leading-5 text-fg-muted">
                   {adReady
-                    ? text(locale, 'AD credential changes now live in AD Workspace, keeping this scan panel focused on path selection and runtime state.', 'AD 凭据修改现在统一放在 AD 工作区，这里只保留路径选择与运行状态。')
-                    : text(locale, 'Open AD Workspace to configure or verify AD before identity expansion.', '请打开 AD 工作区配置或验证 AD，再进行身份展开。')}
+                    ? text(locale, 'AD credential changes live in System Settings, keeping this scan panel focused on path selection and runtime state.', 'AD 凭据修改统一放在系统设置，这里只保留路径选择与运行状态。')
+                    : text(locale, 'Open System Settings to configure or verify AD before identity expansion.', '请打开系统设置配置或验证 AD，再进行身份展开。')}
                 </div>
               </>
             ) : (

@@ -7,15 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/weibinliao/OpenAD/internal/scanservice"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/weibinliao/OpenAD/internal/scanservice"
+	openadwebsocket "github.com/weibinliao/OpenAD/internal/websocket"
 )
 
 var scanProgressUpgrader = websocket.Upgrader{
-	CheckOrigin: func(_ *http.Request) bool {
-		return true
-	},
+	CheckOrigin: openadwebsocket.CheckOrigin,
 }
 
 type scanProgressHub struct {

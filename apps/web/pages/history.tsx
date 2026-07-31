@@ -6,7 +6,7 @@ import { useI18n } from '../contexts/I18nContext';
 import { buildWorkspacePageTitle, defaultWorkspaceSettings, readWorkspaceSettings, type WorkspaceSettings } from '../lib/workspaceSettings';
 import { apiBase } from '../lib/runtimeApi';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
-import { Badge, type BadgeTone } from '../components/ui/badge';
+import { Badge, scanStatusLabel, type BadgeTone } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { NativeSelect } from '../components/ui/input';
 import { Skeleton } from '../components/ui/skeleton';
@@ -364,7 +364,7 @@ export default function HistoryPage() {
                           <span className="mt-0.5 block text-2xs text-fg-muted">{t('depthLabel')}: {session.max_depth}, {t('inheritedLabel')}: {session.include_inherited ? t('yes') : t('no')}</span>
                         </TableCell>
                         <TableCell>
-                          <Badge tone={getStatusTone(session.status)}>{session.status}</Badge>
+                          <Badge tone={getStatusTone(session.status)}>{scanStatusLabel(session.status, locale)}</Badge>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{session.items_scanned}</TableCell>
                         <TableCell className="text-right tabular-nums">{session.permission_count}</TableCell>

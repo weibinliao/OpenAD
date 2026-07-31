@@ -8,9 +8,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/weibinliao/OpenAD/internal/database"
+	"github.com/weibinliao/OpenAD/internal/identityresolution"
 	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/weibinliao/OpenAD/internal/scanservice"
-	"github.com/gin-gonic/gin"
 )
 
 type ScanRequest struct {
@@ -30,6 +33,18 @@ type EffectivePermissionRequest struct {
 	Password             string   `json:"password"`
 	ExcludeGroupPatterns []string `json:"exclude_group_patterns"`
 	ExcludeUserPatterns  []string `json:"exclude_user_patterns"`
+}
+
+type effectivePermissionPreparationError struct {
+	err error
+}
+
+func (err *effectivePermissionPreparationError) Error() string {
+	return fmt.Sprintf("failed to prepare effective permission expansion: %v", err.err)
+}
+
+func (err *effectivePermissionPreparationError) Unwrap() error {
+	return err.err
 }
 
 type PermissionConflictRequest struct {
@@ -56,8 +71,21 @@ func (application *application) handleScan(ctx *gin.Context) {
 	scanID := strings.TrimSpace(request.ScanID)
 	scanContext, cancelScan := context.WithCancel(context.Background())
 	defer cancelScan()
-	application.scanCancels.register(scanID, cancelScan)
-	defer application.scanCancels.remove(scanID)
+	registration, err := application.scanCancels.register(scanID, cancelScan)
+	if errors.Is(err, errScanIDAlreadyActive) {
+		ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	removeRegistrationOnReturn := true
+	defer func() {
+		if removeRegistrationOnReturn {
+			application.scanCancels.remove(scanID, registration)
+		}
+	}()
 
 	requestContext := ctx.Request.Context()
 	go func() {
@@ -68,8 +96,7 @@ func (application *application) handleScan(ctx *gin.Context) {
 		}
 	}()
 
-	var err error
-	var expander scanservice.EffectivePermissionExpander
+	var expanderFactory func() (scanservice.EffectivePermissionExpander, error)
 	if shouldUseEffectivePermissionExpansion(request.EffectivePermissions) {
 		// Resolve a stored connection_id into inline credentials when supplied,
 		// so callers can trigger AD-aware scans without re-entering credentials.
@@ -96,33 +123,40 @@ func (application *application) handleScan(ctx *gin.Context) {
 			return
 		}
 
-		expander, err = application.ad.NewEffectivePermissionExpander(
-			request.EffectivePermissions.Server,
-			request.EffectivePermissions.BaseDN,
-			request.EffectivePermissions.Username,
-			request.EffectivePermissions.Password,
-			request.EffectivePermissions.ExcludeGroupPatterns,
-			request.EffectivePermissions.ExcludeUserPatterns,
-		)
-		if err != nil {
-			ctx.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to prepare effective permission expansion: %v", err)})
-			return
+		effectivePermissions := *request.EffectivePermissions
+		snapshotConnectionID := snapshotConnectionIDForRequest(effectivePermissions)
+		expanderFactory = func() (scanservice.EffectivePermissionExpander, error) {
+			liveExpander, factoryErr := application.ad.NewEffectivePermissionExpander(
+				effectivePermissions.Server,
+				effectivePermissions.BaseDN,
+				effectivePermissions.Username,
+				effectivePermissions.Password,
+				effectivePermissions.ExcludeGroupPatterns,
+				effectivePermissions.ExcludeUserPatterns,
+			)
+			return identityresolution.NewService(database.DB, identityresolution.Options{
+				ConnectionID:    snapshotConnectionID,
+				LiveExpander:    liveExpander,
+				LiveUnavailable: factoryErr != nil,
+			}), nil
 		}
 	}
 
 	resultChannel := make(chan *scanservice.Response, 1)
 	errorChannel := make(chan error, 1)
+	scanFinished := make(chan struct{})
 
 	go func() {
 		result, err := application.scans.Run(scanservice.Request{
-			ScanID:                      scanID,
-			Path:                        request.Path,
-			MaxDepth:                    depth,
-			IncludeInherited:            includeInherited,
-			Progress:                    application.buildScanProgressCallback(scanID),
-			Context:                     scanContext,
-			EffectivePermissionExpander: expander,
+			ScanID:                             scanID,
+			Path:                               request.Path,
+			MaxDepth:                           depth,
+			IncludeInherited:                   includeInherited,
+			Progress:                           application.buildScanProgressCallback(scanID),
+			Context:                            scanContext,
+			EffectivePermissionExpanderFactory: expanderFactory,
 		})
+		close(scanFinished)
 		if err != nil {
 			errorChannel <- err
 			return
@@ -133,11 +167,22 @@ func (application *application) handleScan(ctx *gin.Context) {
 
 	select {
 	case err := <-errorChannel:
+		var preparationErr *effectivePermissionPreparationError
 		if errors.Is(err, context.Canceled) {
 			ctx.JSON(http.StatusOK, gin.H{
 				"scan_id": scanID,
 				"status":  "cancelled",
 				"message": "scan cancelled",
+			})
+			return
+		}
+		if errors.As(err, &preparationErr) {
+			ctx.JSON(http.StatusBadGateway, gin.H{"error": preparationErr.Error()})
+			return
+		}
+		if errors.Is(err, scanservice.ErrScanConcurrencyLimitReached) {
+			ctx.JSON(http.StatusConflict, gin.H{
+				"error": "maximum concurrent scans reached; wait for the active scan to finish or cancel it before retrying",
 			})
 			return
 		}
@@ -147,6 +192,12 @@ func (application *application) handleScan(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, result)
 		return
 	case <-ctx.Request.Context().Done():
+		cancelScan()
+		removeRegistrationOnReturn = false
+		go func() {
+			<-scanFinished
+			application.scanCancels.remove(scanID, registration)
+		}()
 		return
 	}
 }
@@ -298,4 +349,32 @@ func shouldUseEffectivePermissionExpansion(request *EffectivePermissionRequest) 
 		strings.TrimSpace(request.BaseDN) != "" &&
 		strings.TrimSpace(request.Username) != "" &&
 		strings.TrimSpace(request.Password) != ""
+}
+
+func snapshotConnectionIDForRequest(request EffectivePermissionRequest) uuid.UUID {
+	if value := strings.TrimSpace(request.ConnectionID); value != "" {
+		if id, err := uuid.Parse(value); err == nil {
+			return id
+		}
+		return uuid.Nil
+	}
+	if !database.Ready() {
+		return uuid.Nil
+	}
+
+	server := strings.ToLower(strings.TrimSpace(request.Server))
+	baseDN := strings.ToLower(strings.TrimSpace(request.BaseDN))
+	if server == "" || baseDN == "" {
+		return uuid.Nil
+	}
+
+	var profiles []models.ADConnectionProfile
+	if err := database.DB.
+		Where("LOWER(server) = ? AND LOWER(base_dn) = ?", server, baseDN).
+		Limit(2).
+		Find(&profiles).Error; err != nil || len(profiles) != 1 {
+		return uuid.Nil
+	}
+
+	return profiles[0].ID
 }

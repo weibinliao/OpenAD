@@ -15,6 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/weibinliao/OpenAD/internal/ad"
 	"github.com/weibinliao/OpenAD/internal/comparison"
 	"github.com/weibinliao/OpenAD/internal/comparisonservice"
@@ -23,11 +28,7 @@ import (
 	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/weibinliao/OpenAD/internal/scanner"
 	"github.com/weibinliao/OpenAD/internal/scanservice"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/xuri/excelize/v2"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -62,24 +63,43 @@ func TestRuntimeIdentityEndpoint(t *testing.T) {
 }
 
 func TestResolveServerAddressPrefersAPIPort(t *testing.T) {
+	t.Setenv("API_HOST", "")
+	t.Setenv("BIND_HOST", "")
 	t.Setenv("API_PORT", "18080")
 	t.Setenv("PORT", "19090")
 
-	assert.Equal(t, ":18080", resolveServerAddress())
+	assert.Equal(t, "127.0.0.1:18080", resolveServerAddress())
 }
 
 func TestResolveServerAddressFallsBackToPort(t *testing.T) {
+	t.Setenv("API_HOST", "")
+	t.Setenv("BIND_HOST", "")
 	t.Setenv("API_PORT", "")
 	t.Setenv("PORT", "19090")
 
-	assert.Equal(t, ":19090", resolveServerAddress())
+	assert.Equal(t, "127.0.0.1:19090", resolveServerAddress())
 }
 
 func TestResolveServerAddressFallsBackToDefaultWhenInvalid(t *testing.T) {
+	t.Setenv("API_HOST", "")
+	t.Setenv("BIND_HOST", "")
 	t.Setenv("API_PORT", "invalid")
 	t.Setenv("PORT", "70000")
 
-	assert.Equal(t, ":18080", resolveServerAddress())
+	assert.Equal(t, "127.0.0.1:18080", resolveServerAddress())
+}
+
+func TestResolveServerAddressPreservesExplicitAllInterfaceHosts(t *testing.T) {
+	t.Setenv("BIND_HOST", "")
+	t.Setenv("API_PORT", "18080")
+	t.Setenv("PORT", "")
+
+	for _, host := range []string{"0.0.0.0", "*", "+"} {
+		t.Run(host, func(t *testing.T) {
+			t.Setenv("API_HOST", host)
+			assert.Equal(t, "0.0.0.0:18080", resolveServerAddress())
+		})
+	}
 }
 
 func TestNetworkAdmissionPolicyAllowsPrivateAndDeniesSpecificCIDR(t *testing.T) {
@@ -111,9 +131,39 @@ func TestNetworkAdmissionPolicyRejectsCurrentClientLockout(t *testing.T) {
 }
 
 func TestCorsMiddlewareHandlesPreflightRequests(t *testing.T) {
+	t.Setenv("ALLOW_ORIGINS", "")
 	router := newTestRouter(applicationDependencies{})
 
 	request := httptest.NewRequest(http.MethodOptions, "/api/scan", nil)
+	request.Header.Set("Origin", "http://127.0.0.1:43110")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	assert.Equal(t, http.StatusNoContent, recorder.Code)
+	assert.Equal(t, "http://127.0.0.1:43110", recorder.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "Origin", recorder.Header().Get("Vary"))
+}
+
+func TestCorsDefaultDoesNotAllowExternalOrigins(t *testing.T) {
+	t.Setenv("ALLOW_ORIGINS", "")
+	assert.NotContains(t, parseAllowedOrigins(""), "*")
+
+	router := newTestRouter(applicationDependencies{})
+	request := httptest.NewRequest(http.MethodOptions, "/api/scan", nil)
+	request.Header.Set("Origin", "https://operator.example")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	assert.Equal(t, http.StatusNoContent, recorder.Code)
+	assert.Empty(t, recorder.Header().Get("Access-Control-Allow-Origin"))
+}
+
+func TestCorsAllowsExplicitWildcardConfiguration(t *testing.T) {
+	t.Setenv("ALLOW_ORIGINS", "*")
+	router := newTestRouter(applicationDependencies{})
+
+	request := httptest.NewRequest(http.MethodOptions, "/api/scan", nil)
+	request.Header.Set("Origin", "https://operator.example")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 
@@ -230,6 +280,37 @@ func TestScanEndpointStreamsProgressAndReturnsResponse(t *testing.T) {
 	assert.Equal(t, "scan-123", events[2].ScanID)
 }
 
+func TestScanProgressWebSocketOriginAdmission(t *testing.T) {
+	server := httptest.NewServer(newTestRouter(applicationDependencies{}))
+	defer server.Close()
+
+	parsedURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	parsedURL.Scheme = "ws"
+	parsedURL.Path = "/api/scan/ws"
+	parsedURL.RawQuery = "scan_id=origin-check"
+
+	t.Run("desktop loopback origin connects", func(t *testing.T) {
+		headers := http.Header{"Origin": []string{"http://127.0.0.1:43110"}}
+		connection, response, err := websocket.DefaultDialer.Dial(parsedURL.String(), headers)
+		require.NoError(t, err)
+		require.NotNil(t, connection)
+		assert.Equal(t, http.StatusSwitchingProtocols, response.StatusCode)
+		require.NoError(t, connection.Close())
+	})
+
+	t.Run("external origin is rejected", func(t *testing.T) {
+		headers := http.Header{"Origin": []string{"https://evil.example"}}
+		connection, response, err := websocket.DefaultDialer.Dial(parsedURL.String(), headers)
+		if connection != nil {
+			_ = connection.Close()
+		}
+		require.Error(t, err)
+		require.NotNil(t, response)
+		assert.Equal(t, http.StatusForbidden, response.StatusCode)
+	})
+}
+
 func TestScanEndpointForwardsEffectivePermissionExpansionRequest(t *testing.T) {
 	startedAt := time.Now().Add(-1 * time.Minute).UTC()
 	finishedAt := time.Now().UTC()
@@ -246,9 +327,11 @@ func TestScanEndpointForwardsEffectivePermissionExpansionRequest(t *testing.T) {
 	directoryService := &stubADService{permissionExpander: expander}
 	scanRunner := &stubScanRunner{
 		runFunc: func(request scanservice.Request) (*scanservice.Response, error) {
-			require.NotNil(t, request.EffectivePermissionExpander)
+			require.NotNil(t, request.EffectivePermissionExpanderFactory)
 			require.NotNil(t, request.Context)
-			expanded, err := request.EffectivePermissionExpander.Expand(request.Context, []scanner.Permission{{
+			expander, err := request.EffectivePermissionExpanderFactory()
+			require.NoError(t, err)
+			expanded, err := expander.Expand(request.Context, []scanner.Permission{{
 				Path:       `C:\Finance`,
 				Trustee:    `DOMAIN\Finance`,
 				TrusteeSID: "S-1-5-21-group",
@@ -296,6 +379,26 @@ func TestScanEndpointForwardsEffectivePermissionExpansionRequest(t *testing.T) {
 	assert.Len(t, expander.lastPermissions, 1)
 }
 
+func TestSnapshotConnectionIDForRequestMatchesUniqueInlineProfile(t *testing.T) {
+	db := withAccessTestDatabase(t)
+	require.NoError(t, db.AutoMigrate(&models.ADConnectionProfile{}))
+	profile := models.ADConnectionProfile{
+		Name:              "Primary",
+		Server:            "ldaps://dc01.corp.test:636",
+		BaseDN:            "DC=corp,DC=test",
+		BindUser:          "svc-reader",
+		EncryptedPassword: "encrypted",
+	}
+	require.NoError(t, db.Create(&profile).Error)
+
+	connectionID := snapshotConnectionIDForRequest(EffectivePermissionRequest{
+		Server: "LDAPS://DC01.CORP.TEST:636",
+		BaseDN: "dc=corp,dc=test",
+	})
+
+	assert.Equal(t, profile.ID, connectionID)
+}
+
 func TestScanEndpointUsesEffectivePermissionExpansionWhenCredentialsArePresent(t *testing.T) {
 	startedAt := time.Now().Add(-1 * time.Minute).UTC()
 	finishedAt := time.Now().UTC()
@@ -312,8 +415,10 @@ func TestScanEndpointUsesEffectivePermissionExpansionWhenCredentialsArePresent(t
 	directoryService := &stubADService{permissionExpander: expander}
 	scanRunner := &stubScanRunner{
 		runFunc: func(request scanservice.Request) (*scanservice.Response, error) {
-			require.NotNil(t, request.EffectivePermissionExpander)
-			expanded, err := request.EffectivePermissionExpander.Expand(request.Context, []scanner.Permission{{
+			require.NotNil(t, request.EffectivePermissionExpanderFactory)
+			expander, err := request.EffectivePermissionExpanderFactory()
+			require.NoError(t, err)
+			expanded, err := expander.Expand(request.Context, []scanner.Permission{{
 				Path:       `C:\Finance`,
 				Trustee:    `DOMAIN\Finance`,
 				TrusteeSID: "S-1-5-21-group",
@@ -1018,6 +1123,47 @@ func uuidMust(t *testing.T, value string) uuid.UUID {
 	return parsed
 }
 
+func TestADGroupMembersExportDefaultsToExcel(t *testing.T) {
+	group := &models.ADGroup{
+		Name: "Finance", DN: "CN=Finance,DC=corp,DC=test",
+		Members: []models.ADPrincipal{{Name: "Alice", SAMAccountName: "alice", SID: "S-1-a", Type: models.ADObjectTypeUser}},
+	}
+	router := newTestRouter(applicationDependencies{ad: &stubADService{groupClient: &stubADGroupClient{group: group}}})
+
+	recorder := performJSONRequestToRouter(t, router, "/api/ad/groups/members/export", ADGroupMembersExportRequest{
+		ADCredentials: ADCredentials{Server: "ldap://dc", BaseDN: "DC=corp,DC=test", Username: "reader", Password: "secret"},
+		GroupDN:       group.DN,
+	})
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", recorder.Header().Get("Content-Type"))
+	assert.Contains(t, recorder.Header().Get("Content-Disposition"), "Finance-members.xlsx")
+	book, err := excelize.OpenReader(bytes.NewReader(recorder.Body.Bytes()))
+	require.NoError(t, err)
+	defer book.Close()
+	assert.Equal(t, "Members", book.GetSheetName(0))
+}
+
+func TestADGroupMembersExportSupportsCSV(t *testing.T) {
+	group := &models.ADGroup{
+		Name: "Finance", DN: "CN=Finance,DC=corp,DC=test",
+		Members: []models.ADPrincipal{{Name: "Alice", SAMAccountName: "alice", SID: "S-1-a", Type: models.ADObjectTypeUser}},
+	}
+	router := newTestRouter(applicationDependencies{ad: &stubADService{groupClient: &stubADGroupClient{group: group}}})
+
+	recorder := performJSONRequestToRouter(t, router, "/api/ad/groups/members/export", ADGroupMembersExportRequest{
+		ADCredentials: ADCredentials{Server: "ldap://dc", BaseDN: "DC=corp,DC=test", Username: "reader", Password: "secret"},
+		GroupDN:       group.DN,
+		Format:        "csv",
+	})
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "text/csv; charset=utf-8", recorder.Header().Get("Content-Type"))
+	require.GreaterOrEqual(t, recorder.Body.Len(), 3)
+	assert.Equal(t, []byte{0xEF, 0xBB, 0xBF}, recorder.Body.Bytes()[:3])
+	assert.Contains(t, recorder.Body.String(), "alice")
+}
+
 type stubScanRunner struct {
 	runFunc func(request scanservice.Request) (*scanservice.Response, error)
 }
@@ -1121,14 +1267,15 @@ func (exporter *stubExporter) ExportToHTML(permissions []models.Permission, file
 }
 
 type stubADService struct {
-	connectionClient   *stubADConnectionClient
-	userSearchClient   *stubADUserSearchClient
-	groupClient        *stubADGroupClient
-	treeClient         *stubADTreeClient
-	permissionExpander scanservice.EffectivePermissionExpander
-	userClientErr      error
-	groupClientErr     error
-	treeClientErr      error
+	connectionClient        *stubADConnectionClient
+	userSearchClient        *stubADUserSearchClient
+	groupClient             *stubADGroupClient
+	treeClient              *stubADTreeClient
+	permissionExpander      scanservice.EffectivePermissionExpander
+	permissionExpanderCalls int
+	userClientErr           error
+	groupClientErr          error
+	treeClientErr           error
 }
 
 func TestExportDownloadEndpointReturnsAttachment(t *testing.T) {
@@ -1612,6 +1759,7 @@ func (service *stubADService) NewUserSearchClient(_ string, _ string, _ string, 
 }
 
 func (service *stubADService) NewEffectivePermissionExpander(_ string, _ string, _ string, _ string, _ []string, _ []string) (scanservice.EffectivePermissionExpander, error) {
+	service.permissionExpanderCalls++
 	if service.permissionExpander != nil {
 		return service.permissionExpander, nil
 	}

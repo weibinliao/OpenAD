@@ -1,13 +1,15 @@
 package access
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
+	"github.com/weibinliao/OpenAD/internal/models"
 	"gorm.io/gorm"
 )
 
@@ -352,6 +354,104 @@ func TestByResourceExpandsGroupsAndKeepsUnresolved(t *testing.T) {
 
 	if result.Counts.Users != 1 || result.Counts.Unresolved != 1 || result.Counts.ViaGroups < 2 {
 		t.Fatalf("counts = %+v", result.Counts)
+	}
+}
+
+func TestByResourceUsesOriginatingGroupAsParent(t *testing.T) {
+	db := newTestDB(t)
+	seed := seedFixture(t, db)
+	service := NewService(db)
+
+	if err := db.Where("scan_session_id = ?", seed.sessionID).Delete(&models.Permission{}).Error; err != nil {
+		t.Fatalf("clear fixture permissions: %v", err)
+	}
+	if err := db.Create(&models.Permission{
+		ScanSessionID:             seed.sessionID,
+		Path:                      `D:\Share\Sales`,
+		Trustee:                   `CORP\alice`,
+		TrusteeSID:                aliceSID,
+		Rights:                    "Modify",
+		Type:                      "allow",
+		RiskLevel:                 "medium",
+		OriginatingGroup:          "Sales-Team",
+		GroupInheritanceHierarchy: "Sales-Team",
+	}).Error; err != nil {
+		t.Fatalf("seed expanded group permission: %v", err)
+	}
+
+	result, err := service.ByResource(ByResourceInput{PathPrefix: `D:\Share`})
+	if err != nil {
+		t.Fatalf("ByResource: %v", err)
+	}
+	if len(result.Principals) != 2 {
+		t.Fatalf("principals = %+v, want group parent and one member", result.Principals)
+	}
+	group, member := result.Principals[0], result.Principals[1]
+	if group.Source != "group" || group.SID != salesSID || group.Name != "Sales-Team" {
+		t.Fatalf("group parent = %+v", group)
+	}
+	if member.Source != "group-member" || member.SID != aliceSID || member.GroupSID != salesSID {
+		t.Fatalf("group member = %+v", member)
+	}
+	if result.Counts.Users != 0 || result.Counts.ViaGroups != 1 {
+		t.Fatalf("counts = %+v", result.Counts)
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	if !strings.Contains(string(payload), `"member_count":1`) || !strings.Contains(string(payload), `"groups":1`) {
+		t.Fatalf("result is missing group count metadata: %s", payload)
+	}
+}
+
+func TestByResourceKeepsGroupWithoutSnapshotMembers(t *testing.T) {
+	db := newTestDB(t)
+	seed := seedFixture(t, db)
+	service := NewService(db)
+
+	const emptyGroupSID = "S-1-5-21-1-1-1-2513"
+	if err := db.Create(&models.ADGroupRecord{
+		RunID: seed.runID,
+		SID:   emptyGroupSID,
+		Name:  "Domain Users",
+	}).Error; err != nil {
+		t.Fatalf("seed empty group: %v", err)
+	}
+	if err := db.Where("scan_session_id = ?", seed.sessionID).Delete(&models.Permission{}).Error; err != nil {
+		t.Fatalf("clear fixture permissions: %v", err)
+	}
+	if err := db.Create(&models.Permission{
+		ScanSessionID: seed.sessionID,
+		Path:          `D:\Share`,
+		Trustee:       `CORP\Domain Users`,
+		TrusteeSID:    emptyGroupSID,
+		Rights:        "ReadAndExecute",
+		Type:          "allow",
+	}).Error; err != nil {
+		t.Fatalf("seed empty group permission: %v", err)
+	}
+
+	result, err := service.ByResource(ByResourceInput{PathPrefix: `D:\Share`})
+	if err != nil {
+		t.Fatalf("ByResource: %v", err)
+	}
+	if len(result.Principals) != 1 {
+		t.Fatalf("principals = %+v, want the empty group parent", result.Principals)
+	}
+	group := result.Principals[0]
+	if group.Source != "group" || group.SID != emptyGroupSID || group.Name != "Domain Users" {
+		t.Fatalf("empty group parent = %+v", group)
+	}
+	if result.Counts.Principals != 1 {
+		t.Fatalf("counts = %+v", result.Counts)
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	if !strings.Contains(string(payload), `"groups":1`) {
+		t.Fatalf("result is missing group count metadata: %s", payload)
 	}
 }
 

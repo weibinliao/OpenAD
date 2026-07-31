@@ -84,7 +84,10 @@ func (f *ExclusionFilter) matchesAny(value string, patterns []string) bool {
 
 		// Allow DOMAIN\user-pattern to match samAccountName values.
 		if index := strings.LastIndex(normalizedPattern, `\`); index >= 0 && index < len(normalizedPattern)-1 {
-			shortPattern := normalizedPattern[index+1:]
+			shortPattern := strings.TrimSpace(normalizedPattern[index+1:])
+			if shortPattern == "" || shortPattern == "*" {
+				continue
+			}
 			if matched, _ := filepath.Match(shortPattern, normalizedValue); matched {
 				return true
 			}

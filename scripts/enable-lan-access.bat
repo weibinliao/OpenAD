@@ -21,10 +21,10 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo [OK] LAN access prerequisites applied.
-echo [INFO] start-background.bat now binds the Web UI to 0.0.0.0 by default.
-echo [INFO] If you need to force a specific public host, run:
-echo     set PUBLIC_HOST=your-host-ip
-echo     start-background.bat
+echo [INFO] Default launches remain bound to 127.0.0.1. No persistent LAN binding was enabled.
+echo [SECURITY WARNING] OpenAD has no product login or RBAC. Use LAN mode only on a trusted administration network.
+echo [ACTION] Replace your-host-ip below, then run this one-time command in Command Prompt:
+echo     set "API_HOST=0.0.0.0" ^&^& set "WEB_HOST=0.0.0.0" ^&^& set "PUBLIC_HOST=your-host-ip" ^&^& set "ALLOW_ORIGINS=http://your-host-ip:%WEB_PORT%" ^&^& set "WEBSOCKET_ALLOWED_ORIGINS=http://your-host-ip:%WEB_PORT%" ^&^& call "%~dp0start-background.bat"
 echo.
 echo [INFO] LAN users can then open:
 echo     http://your-host-ip:%WEB_PORT%

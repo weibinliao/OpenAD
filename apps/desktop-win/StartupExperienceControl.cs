@@ -15,7 +15,9 @@ internal sealed record StartupExperienceLayout(
 internal sealed class StartupExperienceControl : UserControl
 {
     internal const string PrimaryProductName = "OpenAD";
-    internal static readonly TimeSpan MinimumVisibleDuration = TimeSpan.FromMilliseconds(1800);
+    internal static readonly TimeSpan MinimumVisibleDuration = TimeSpan.FromMilliseconds(750);
+    internal static readonly TimeSpan FadeOutDuration = TimeSpan.FromMilliseconds(240);
+    internal static readonly string ApplicationVersionLabel = CreateApplicationVersionLabel();
 
     private static readonly Color Surface = Color.FromArgb(15, 16, 20);
     private static readonly Color SurfaceLower = Color.FromArgb(11, 12, 15);
@@ -26,31 +28,36 @@ internal sealed class StartupExperienceControl : UserControl
     private static readonly Color TextPrimary = Color.FromArgb(244, 246, 250);
     private static readonly Color TextSecondary = Color.FromArgb(177, 183, 197);
     private static readonly Color TextMuted = Color.FromArgb(119, 126, 142);
-    private static readonly string[] StageLabels = ["运行时", "权限服务", "工作台", "桌面界面"];
+    private static readonly string DisplayFontFamilyName = ResolveDisplayFontFamilyName();
 
+    private readonly StartupExperienceLocale locale;
+    private readonly StartupExperienceStrings strings;
     private readonly System.Windows.Forms.Timer animationTimer = new() { Interval = 32 };
     private readonly Stopwatch visibleTimer = new();
     private readonly Button retryButton = new();
     private readonly Button minimizeButton = new();
     private readonly Button closeButton = new();
-    private StartupExperienceState state =
-        StartupExperienceState.FromRuntimeMessage("Preparing desktop runtime...");
+    private StartupExperienceState state;
     private double displayedProgress;
     private double targetProgress = 0.08d;
     private double animationSeconds;
+    private float transitionOpacity = 1f;
 
     internal event EventHandler? RetryRequested;
     internal event EventHandler? MinimizeRequested;
     internal event EventHandler? CloseRequested;
     internal event MouseEventHandler? DragRequested;
 
-    internal StartupExperienceControl()
+    internal StartupExperienceControl(StartupExperienceLocale locale)
     {
+        this.locale = locale;
+        strings = StartupExperienceStrings.For(locale);
+        state = StartupExperienceState.FromRuntimeMessage("Preparing desktop runtime...", locale);
         Dock = DockStyle.Fill;
         BackColor = Surface;
         DoubleBuffered = true;
         TabStop = false;
-        AccessibleName = "OpenAD startup";
+        AccessibleName = strings.AccessibleName;
         AccessibleDescription = state.Headline;
 
         SetStyle(
@@ -60,15 +67,15 @@ internal sealed class StartupExperienceControl : UserControl
             ControlStyles.UserPaint,
             true);
 
-        ConfigureWindowButton(minimizeButton, "−", "最小化窗口");
-        ConfigureWindowButton(closeButton, "×", "关闭窗口");
+        ConfigureWindowButton(minimizeButton, "−", strings.MinimizeAccessibleName);
+        ConfigureWindowButton(closeButton, "×", strings.CloseAccessibleName);
         closeButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(196, 43, 57);
         closeButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(150, 32, 44);
         minimizeButton.Click += (_, _) => MinimizeRequested?.Invoke(this, EventArgs.Empty);
         closeButton.Click += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
 
-        retryButton.Text = "重新启动";
-        retryButton.AccessibleName = "重新启动 OpenAD";
+        retryButton.Text = strings.RetryText;
+        retryButton.AccessibleName = strings.RetryAccessibleName;
         retryButton.Size = new Size(128, 38);
         retryButton.FlatStyle = FlatStyle.Flat;
         retryButton.FlatAppearance.BorderSize = 1;
@@ -99,7 +106,7 @@ internal sealed class StartupExperienceControl : UserControl
 
         MouseDown += (_, e) =>
         {
-            if (e.Button == MouseButtons.Left && e.Y <= 48)
+            if (e.Button == MouseButtons.Left && e.Y <= TitleBarHeightForDpi(DeviceDpi))
             {
                 DragRequested?.Invoke(this, e);
             }
@@ -110,10 +117,12 @@ internal sealed class StartupExperienceControl : UserControl
 
     internal void BeginStartup()
     {
-        state = StartupExperienceState.FromRuntimeMessage("Preparing desktop runtime...");
+        state = StartupExperienceState.FromRuntimeMessage("Preparing desktop runtime...", locale);
         displayedProgress = 0d;
         targetProgress = state.TargetProgress;
         animationSeconds = 0d;
+        transitionOpacity = 1f;
+        ApplyTransitionToWindowButtons();
         retryButton.Visible = false;
         AccessibleDescription = state.Headline;
         visibleTimer.Restart();
@@ -127,7 +136,7 @@ internal sealed class StartupExperienceControl : UserControl
 
     internal void UpdateRuntimeStatus(string runtimeMessage)
     {
-        state = StartupExperienceState.FromRuntimeMessage(runtimeMessage);
+        state = StartupExperienceState.FromRuntimeMessage(runtimeMessage, locale);
         targetProgress = state.IsFailure
             ? Math.Max(displayedProgress, state.TargetProgress)
             : Math.Max(targetProgress, state.TargetProgress);
@@ -137,9 +146,14 @@ internal sealed class StartupExperienceControl : UserControl
         Invalidate();
     }
 
-    internal async Task CompleteAsync()
+    internal async Task<bool> CompleteAsync()
     {
-        state = StartupExperienceState.Completed();
+        if (state.IsFailure)
+        {
+            return false;
+        }
+
+        state = StartupExperienceState.Completed(locale);
         targetProgress = 1d;
         AccessibleDescription = $"{state.Headline}. {state.Detail}";
         Invalidate();
@@ -149,25 +163,51 @@ internal sealed class StartupExperienceControl : UserControl
         {
             await Task.Delay(remaining);
         }
-        await Task.Delay(180);
+        var fadeTimer = Stopwatch.StartNew();
+        while (fadeTimer.Elapsed < FadeOutDuration)
+        {
+            var progress = (float)(fadeTimer.Elapsed.TotalMilliseconds / FadeOutDuration.TotalMilliseconds);
+            transitionOpacity = 1f - Math.Clamp(progress, 0f, 1f);
+            ApplyTransitionToWindowButtons();
+            Invalidate();
+            await Task.Delay(16);
+        }
+
+        transitionOpacity = 0f;
+        ApplyTransitionToWindowButtons();
+        Invalidate();
+        return true;
     }
 
-    internal static StartupExperienceLayout CalculateLayout(Size size, bool showRetry)
+    internal static StartupExperienceLayout CalculateLayout(Size size, bool showRetry, int deviceDpi)
     {
-        var width = Math.Min(760f, Math.Max(560f, size.Width - 96f));
+        var scale = DpiScaleFor(deviceDpi);
+        var width = Math.Min(760f * scale, Math.Max(560f * scale, size.Width - 96f * scale));
         var left = (size.Width - width) / 2f;
-        var top = Math.Max(88f, size.Height * 0.15f);
-        var brand = new RectangleF(left, top, width, 190f);
+        var top = Math.Max(88f * scale, size.Height * 0.15f);
+        var brand = new RectangleF(left, top, width, 190f * scale);
         var mark = new RectangleF(
-            left + (width - 92f) / 2f,
+            left + (width - 92f * scale) / 2f,
             top,
-            92f,
-            92f);
-        var status = new RectangleF(left + 40f, brand.Bottom + 14f, width - 80f, 88f);
+            92f * scale,
+            92f * scale);
+        var status = new RectangleF(
+            left + 40f * scale,
+            brand.Bottom + 14f * scale,
+            width - 80f * scale,
+            88f * scale);
         var retry = showRetry
-            ? new RectangleF(left + (width - 128f) / 2f, status.Bottom + 20f, 128f, 38f)
+            ? new RectangleF(
+                left + (width - 128f * scale) / 2f,
+                status.Bottom + 20f * scale,
+                128f * scale,
+                38f * scale)
             : new RectangleF(left + width / 2f, status.Bottom, 0f, 0f);
-        var progress = new RectangleF(left, size.Height - 94f, width, 62f);
+        var progress = new RectangleF(
+            left,
+            size.Height - 94f * scale,
+            width,
+            62f * scale);
 
         return new(
             new RectangleF(left, top, width, progress.Bottom - top),
@@ -177,6 +217,8 @@ internal sealed class StartupExperienceControl : UserControl
             retry,
             progress);
     }
+
+    internal static float TitleBarHeightForDpi(int deviceDpi) => 48f * DpiScaleFor(deviceDpi);
 
     protected override void OnVisibleChanged(EventArgs e)
     {
@@ -194,10 +236,12 @@ internal sealed class StartupExperienceControl : UserControl
     protected override void OnLayout(LayoutEventArgs e)
     {
         base.OnLayout(e);
-        minimizeButton.SetBounds(Math.Max(0, Width - 92), 0, 46, 38);
-        closeButton.SetBounds(Math.Max(0, Width - 46), 0, 46, 38);
+        var buttonWidth = (int)Math.Round(ScaleToDpi(46f));
+        var buttonHeight = (int)Math.Round(ScaleToDpi(38f));
+        minimizeButton.SetBounds(Math.Max(0, Width - buttonWidth * 2), 0, buttonWidth, buttonHeight);
+        closeButton.SetBounds(Math.Max(0, Width - buttonWidth), 0, buttonWidth, buttonHeight);
 
-        var layout = CalculateLayout(ClientSize, retryButton.Visible);
+        var layout = CalculateLayout(ClientSize, retryButton.Visible, DeviceDpi);
         retryButton.SetBounds(
             (int)layout.Retry.X,
             (int)layout.Retry.Y,
@@ -209,6 +253,13 @@ internal sealed class StartupExperienceControl : UserControl
         retryButton.BringToFront();
     }
 
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        PerformLayout();
+        Invalidate();
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
@@ -218,7 +269,7 @@ internal sealed class StartupExperienceControl : UserControl
         graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
         graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-        var layout = CalculateLayout(ClientSize, retryButton.Visible);
+        var layout = CalculateLayout(ClientSize, retryButton.Visible, DeviceDpi);
         DrawBackground(graphics);
         DrawChrome(graphics);
         DrawBrand(graphics, layout);
@@ -259,16 +310,21 @@ internal sealed class StartupExperienceControl : UserControl
             90f);
         graphics.FillRectangle(background, ClientRectangle);
 
-        using var divider = new Pen(Color.FromArgb(28, 118, 125, 145), 1f);
-        graphics.DrawLine(divider, 0f, 47f, Width, 47f);
+        using var divider = new Pen(
+            TransitionColor(Color.FromArgb(28, 118, 125, 145)),
+            ScaleToDpi(1f));
+        var dividerY = TitleBarHeightForDpi(DeviceDpi) - ScaleToDpi(1f);
+        graphics.DrawLine(divider, 0f, dividerY, Width, dividerY);
 
-        using var dotBrush = new SolidBrush(Color.FromArgb(18, 151, 158, 179));
-        const int gap = 64;
-        for (var y = 94; y < Height - 110; y += gap)
+        using var dotBrush = new SolidBrush(
+            TransitionColor(Color.FromArgb(18, 151, 158, 179)));
+        var gap = ScaleToDpi(64f);
+        var dotSize = ScaleToDpi(1.5f);
+        for (var y = ScaleToDpi(94f); y < Height - ScaleToDpi(110f); y += gap)
         {
-            for (var x = 42; x < Width; x += gap)
+            for (var x = ScaleToDpi(42f); x < Width; x += gap)
             {
-                graphics.FillEllipse(dotBrush, x, y, 1.5f, 1.5f);
+                graphics.FillEllipse(dotBrush, x, y, dotSize, dotSize);
             }
         }
     }
@@ -277,17 +333,26 @@ internal sealed class StartupExperienceControl : UserControl
     {
         using var productFont = new Font("Segoe UI", 9f, FontStyle.Bold);
         using var metaFont = new Font("Segoe UI", 8.5f, FontStyle.Regular);
-        using var productBrush = new SolidBrush(TextSecondary);
-        using var metaBrush = new SolidBrush(TextMuted);
+        using var productBrush = new SolidBrush(TransitionColor(TextSecondary));
+        using var metaBrush = new SolidBrush(TransitionColor(TextMuted));
 
-        graphics.DrawString("OPENAD DESKTOP", productFont, productBrush, 24f, 16f);
-        graphics.DrawString("OPEN SOURCE · LOCAL FIRST", metaFont, metaBrush, 146f, 17f);
+        var left = ScaleToDpi(24f);
+        var productTop = ScaleToDpi(16f);
+        const string desktopLabel = "OPENAD DESKTOP";
+        graphics.DrawString(desktopLabel, productFont, productBrush, left, productTop);
+        var productWidth = graphics.MeasureString(desktopLabel, productFont).Width;
         graphics.DrawString(
-            "LOCAL RUNTIME",
+            strings.OpenSourceLocalFirst,
             metaFont,
             metaBrush,
-            24f,
-            Height - 28f);
+            left + productWidth + ScaleToDpi(12f),
+            ScaleToDpi(17f));
+        graphics.DrawString(
+            $"{strings.LocalRuntime} · {ApplicationVersionLabel}",
+            metaFont,
+            metaBrush,
+            left,
+            Height - ScaleToDpi(28f));
     }
 
     private void DrawBrand(Graphics graphics, StartupExperienceLayout layout)
@@ -300,42 +365,55 @@ internal sealed class StartupExperienceControl : UserControl
 
         DrawDirectoryMark(graphics, layout.Mark, accent);
 
-        using var titleFont = new Font("Segoe UI Variable Display", 31f, FontStyle.Bold);
+        using var titleFont = new Font(DisplayFontFamilyName, 31f, FontStyle.Bold);
         using var subtitleFont = new Font("Segoe UI", 10f, FontStyle.Regular);
-        using var titleBrush = new SolidBrush(TextPrimary);
-        using var subtitleBrush = new SolidBrush(TextSecondary);
+        using var titleBrush = new SolidBrush(TransitionColor(TextPrimary));
+        using var subtitleBrush = new SolidBrush(TransitionColor(TextSecondary));
         using var centered = new StringFormat { Alignment = StringAlignment.Center };
 
         graphics.DrawString(
             PrimaryProductName,
             titleFont,
             titleBrush,
-            new RectangleF(layout.Brand.X, layout.Mark.Bottom + 12f, layout.Brand.Width, 48f),
+            new RectangleF(
+                layout.Brand.X,
+                layout.Mark.Bottom + ScaleToDpi(12f),
+                layout.Brand.Width,
+                ScaleToDpi(48f)),
             centered);
         graphics.DrawString(
-            "开放的 Active Directory 权限洞察与运维工作台",
+            strings.Subtitle,
             subtitleFont,
             subtitleBrush,
-            new RectangleF(layout.Brand.X, layout.Mark.Bottom + 60f, layout.Brand.Width, 24f),
+            new RectangleF(
+                layout.Brand.X,
+                layout.Mark.Bottom + ScaleToDpi(60f),
+                layout.Brand.Width,
+                ScaleToDpi(24f)),
             centered);
     }
 
     private void DrawDirectoryMark(Graphics graphics, RectangleF bounds, Color accent)
     {
+        var markScale = bounds.Width / 92f;
         var centerX = bounds.Left + bounds.Width / 2f;
-        var topY = bounds.Top + 10f;
-        var branchY = bounds.Top + 43f;
-        var leafY = bounds.Bottom - 10f;
-        var leftX = centerX - 28f;
-        var rightX = centerX + 28f;
+        var topY = bounds.Top + 10f * markScale;
+        var branchY = bounds.Top + 43f * markScale;
+        var leafY = bounds.Bottom - 10f * markScale;
+        var leftX = centerX - 28f * markScale;
+        var rightX = centerX + 28f * markScale;
         var reveal = Math.Clamp(animationSeconds / 0.9d, 0d, 1d);
 
-        using var basePen = new Pen(Color.FromArgb(62, 129, 138, 164), 2f)
+        using var basePen = new Pen(
+            TransitionColor(Color.FromArgb(62, 129, 138, 164)),
+            2f * markScale)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
         };
-        using var activePen = new Pen(Color.FromArgb(225, accent), 2.4f)
+        using var activePen = new Pen(
+            TransitionColor(Color.FromArgb(225, accent)),
+            2.4f * markScale)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
@@ -354,9 +432,9 @@ internal sealed class StartupExperienceControl : UserControl
             var horizontal = Math.Clamp((reveal - 0.45d) / 0.35d, 0d, 1d);
             graphics.DrawLine(
                 activePen,
-                centerX - 28f * (float)horizontal,
+                centerX - 28f * markScale * (float)horizontal,
                 branchY,
-                centerX + 28f * (float)horizontal,
+                centerX + 28f * markScale * (float)horizontal,
                 branchY);
         }
         if (reveal > 0.72d)
@@ -373,12 +451,23 @@ internal sealed class StartupExperienceControl : UserControl
             }
         }
 
-        using var rootFill = new SolidBrush(accent);
-        using var leafFill = new SolidBrush(Color.FromArgb(215, TextPrimary));
-        graphics.FillEllipse(rootFill, centerX - 5f, topY - 5f, 10f, 10f);
+        using var rootFill = new SolidBrush(TransitionColor(accent));
+        using var leafFill = new SolidBrush(
+            TransitionColor(Color.FromArgb(215, TextPrimary)));
+        graphics.FillEllipse(
+            rootFill,
+            centerX - 5f * markScale,
+            topY - 5f * markScale,
+            10f * markScale,
+            10f * markScale);
         foreach (var x in new[] { leftX, centerX, rightX })
         {
-            graphics.FillEllipse(leafFill, x - 4f, leafY - 4f, 8f, 8f);
+            graphics.FillEllipse(
+                leafFill,
+                x - 4f * markScale,
+                leafY - 4f * markScale,
+                8f * markScale,
+                8f * markScale);
         }
     }
 
@@ -386,13 +475,13 @@ internal sealed class StartupExperienceControl : UserControl
     {
         using var headlineFont = new Font("Segoe UI", 10.5f, FontStyle.Bold);
         using var detailFont = new Font("Segoe UI", 9f, FontStyle.Regular);
-        using var headlineBrush = new SolidBrush(
+        using var headlineBrush = new SolidBrush(TransitionColor(
             state.IsFailure
                 ? Danger
                 : state.Phase == StartupExperiencePhase.Complete
                     ? Success
-                    : Primary);
-        using var detailBrush = new SolidBrush(TextMuted);
+                    : Primary));
+        using var detailBrush = new SolidBrush(TransitionColor(TextMuted));
         using var centered = new StringFormat
         {
             Alignment = StringAlignment.Center,
@@ -404,7 +493,11 @@ internal sealed class StartupExperienceControl : UserControl
             state.Headline,
             headlineFont,
             headlineBrush,
-            new RectangleF(layout.Status.X, layout.Status.Y, layout.Status.Width, 26f),
+            new RectangleF(
+                layout.Status.X,
+                layout.Status.Y,
+                layout.Status.Width,
+                ScaleToDpi(26f)),
             centered);
         graphics.DrawString(
             state.Detail,
@@ -412,9 +505,9 @@ internal sealed class StartupExperienceControl : UserControl
             detailBrush,
             new RectangleF(
                 layout.Status.X,
-                layout.Status.Y + 32f,
+                layout.Status.Y + ScaleToDpi(32f),
                 layout.Status.Width,
-                layout.Status.Height - 32f),
+                layout.Status.Height - ScaleToDpi(32f)),
             centered);
     }
 
@@ -425,10 +518,14 @@ internal sealed class StartupExperienceControl : UserControl
             : state.Phase == StartupExperiencePhase.Complete
                 ? Success
                 : PrimaryMuted;
-        var lineY = layout.Progress.Y + 16f;
+        var lineY = layout.Progress.Y + ScaleToDpi(16f);
 
-        using var basePen = new Pen(Color.FromArgb(58, 99, 106, 124), 2f);
-        using var progressPen = new Pen(Color.FromArgb(220, accent), 2.5f)
+        using var basePen = new Pen(
+            TransitionColor(Color.FromArgb(58, 99, 106, 124)),
+            ScaleToDpi(2f));
+        using var progressPen = new Pen(
+            TransitionColor(Color.FromArgb(220, accent)),
+            ScaleToDpi(2.5f))
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
@@ -443,23 +540,83 @@ internal sealed class StartupExperienceControl : UserControl
 
         using var labelFont = new Font("Segoe UI", 8f, FontStyle.Regular);
         using var activeFont = new Font("Segoe UI", 8f, FontStyle.Bold);
-        using var mutedBrush = new SolidBrush(TextMuted);
-        using var activeBrush = new SolidBrush(TextSecondary);
+        using var mutedBrush = new SolidBrush(TransitionColor(TextMuted));
+        using var activeBrush = new SolidBrush(TransitionColor(TextSecondary));
         using var format = new StringFormat { Alignment = StringAlignment.Center };
 
-        for (var index = 0; index < StageLabels.Length; index++)
+        for (var index = 0; index < strings.StageLabels.Length; index++)
         {
-            var step = index / (StageLabels.Length - 1f);
+            var step = index / (strings.StageLabels.Length - 1f);
             var x = layout.Progress.Left + layout.Progress.Width * step;
             var active = displayedProgress + 0.02d >= step;
-            using var nodeFill = new SolidBrush(active ? accent : Color.FromArgb(58, 64, 77));
-            graphics.FillEllipse(nodeFill, x - 4f, lineY - 4f, 8f, 8f);
+            using var nodeFill = new SolidBrush(
+                TransitionColor(active ? accent : Color.FromArgb(58, 64, 77)));
+            var nodeRadius = ScaleToDpi(4f);
+            graphics.FillEllipse(
+                nodeFill,
+                x - nodeRadius,
+                lineY - nodeRadius,
+                nodeRadius * 2f,
+                nodeRadius * 2f);
             graphics.DrawString(
-                StageLabels[index],
+                strings.StageLabels[index],
                 active ? activeFont : labelFont,
                 active ? activeBrush : mutedBrush,
-                new RectangleF(x - 62f, lineY + 13f, 124f, 20f),
+                new RectangleF(
+                    x - ScaleToDpi(62f),
+                    lineY + ScaleToDpi(13f),
+                    ScaleToDpi(124f),
+                    ScaleToDpi(20f)),
                 format);
         }
+    }
+
+    private static float DpiScaleFor(int deviceDpi) => Math.Max(deviceDpi, 96) / 96f;
+
+    private float ScaleToDpi(float value) => value * DpiScaleFor(DeviceDpi);
+
+    private Color TransitionColor(Color color) => Color.FromArgb(
+        (int)Math.Round(color.A * transitionOpacity),
+        color.R,
+        color.G,
+        color.B);
+
+    private void ApplyTransitionToWindowButtons()
+    {
+        var buttonForeground = Blend(Surface, Color.FromArgb(205, 209, 220), transitionOpacity);
+        minimizeButton.ForeColor = buttonForeground;
+        closeButton.ForeColor = buttonForeground;
+    }
+
+    private static Color Blend(Color background, Color foreground, float amount)
+    {
+        var ratio = Math.Clamp(amount, 0f, 1f);
+        return Color.FromArgb(
+            (int)Math.Round(background.R + (foreground.R - background.R) * ratio),
+            (int)Math.Round(background.G + (foreground.G - background.G) * ratio),
+            (int)Math.Round(background.B + (foreground.B - background.B) * ratio));
+    }
+
+    private static string ResolveDisplayFontFamilyName()
+    {
+        using var installedFonts = new InstalledFontCollection();
+        foreach (var candidate in new[] { "Segoe UI Variable Display", "Segoe UI" })
+        {
+            if (installedFonts.Families.Any(
+                family => family.Name.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+            {
+                return candidate;
+            }
+        }
+
+        return FontFamily.GenericSansSerif.Name;
+    }
+
+    private static string CreateApplicationVersionLabel()
+    {
+        var version = typeof(StartupExperienceControl).Assembly.GetName().Version;
+        return version is null
+            ? "v0.0.0"
+            : $"v{version.Major}.{version.Minor}.{Math.Max(0, version.Build)}";
     }
 }

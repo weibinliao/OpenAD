@@ -7,6 +7,7 @@ import { useADConnection } from '../contexts/ADConnectionContext';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Skeleton } from '../components/ui/skeleton';
 import { QuickConnectCard } from '../components/QuickConnectCard';
 import DirectoryExplorerWorkbench from '../components/DirectoryExplorerWorkbench';
 
@@ -86,22 +87,29 @@ function DirectorySyncCard({ connectionId }: { connectionId: string }) {
   const [lastRun, setLastRun] = useState<SyncRun | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
-  const loadLastRun = useCallback(async (): Promise<SyncRun | null> => {
+  const loadLastRun = useCallback(async (showLoading = false): Promise<SyncRun | null> => {
+    if (showLoading) setLoading(true);
+    setLoadError('');
     try {
       const response = await fetch(`${apiBase()}/api/ad/sync/runs?page=1&page_size=1`);
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error(data.error || d.identity.syncLoadFailed);
       const run = Array.isArray(data.items) && data.items.length > 0 ? (data.items[0] as SyncRun) : null;
       setLastRun(run);
       return run;
-    } catch {
+    } catch (loadRequestError) {
+      setLoadError(loadRequestError instanceof Error ? loadRequestError.message : d.identity.syncLoadFailed);
       return null;
+    } finally {
+      if (showLoading) setLoading(false);
     }
-  }, []);
+  }, [d.identity.syncLoadFailed]);
 
   React.useEffect(() => {
-    loadLastRun();
+    void loadLastRun(true);
   }, [loadLastRun]);
 
   // Poll while a run is in flight so counts appear when it completes.
@@ -145,7 +153,19 @@ function DirectorySyncCard({ connectionId }: { connectionId: string }) {
       />
       <CardContent>
         {error ? <ErrorBanner message={error} /> : null}
-        {!lastRun ? (
+        {loadError ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-danger/40 bg-danger-soft px-4 py-2.5 text-sm text-danger">
+            <span>{d.identity.syncLoadFailed}</span>
+            <Button variant="outline" size="sm" onClick={() => void loadLastRun(true)}>
+              {d.common.retry}
+            </Button>
+          </div>
+        ) : loading ? (
+          <div role="status" aria-label={d.identity.syncLoading} className="space-y-2">
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-2/3" />
+          </div>
+        ) : !lastRun ? (
           <p className="text-xs text-fg-muted">{d.identity.syncNever}</p>
         ) : (
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-fg-secondary">
