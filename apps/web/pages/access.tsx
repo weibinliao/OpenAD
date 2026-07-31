@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   GitFork,
@@ -8,6 +8,8 @@ import {
   AlertTriangle,
   Info,
   ShieldQuestion,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { apiBase } from '../lib/runtimeApi';
 import { useDict } from '../lib/i18n';
@@ -77,9 +79,11 @@ interface ResourcePrincipal {
   types: string[];
   risk_level?: string;
   group_name?: string;
+  group_sid?: string;
   via_chain?: string;
   paths: string[];
   enabled?: boolean;
+  member_count?: number;
 }
 
 interface ByResourceResult {
@@ -95,7 +99,7 @@ interface ByResourceResult {
     inherited: boolean;
     risk_level?: string;
   }>;
-  counts: { aces: number; principals: number; users: number; via_groups: number; unresolved: number };
+  counts: { aces: number; principals: number; groups: number; users: number; via_groups: number; unresolved: number };
   error?: string;
 }
 
@@ -152,6 +156,16 @@ function ErrorBanner({ message }: { message: string }) {
       <span className="min-w-0 break-all">{message}</span>
     </div>
   );
+}
+
+function resourceGroupKey(principal: ResourcePrincipal) {
+  return (principal.group_sid || (principal.source === 'group' ? principal.sid : '') || principal.group_name || principal.name)
+    .trim()
+    .toLowerCase();
+}
+
+function accessLabel(template: string, values: Record<string, string | number>) {
+  return Object.entries(values).reduce((label, [key, value]) => label.replace(`{${key}}`, String(value)), template);
 }
 
 function WhyCell({ why, d }: { why: Why; d: ReturnType<typeof useDict> }) {
@@ -388,6 +402,7 @@ function ByResourceTab() {
   const [result, setResult] = useState<ByResourceResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
 
   const analyze = useCallback(
     async (value?: string) => {
@@ -404,6 +419,7 @@ function ByResourceTab() {
         const data = (await response.json().catch(() => ({}))) as ByResourceResult;
         if (!response.ok) throw new Error(data.error || d.common.error);
         setResult(data);
+        setCollapsedGroups(new Set());
       } catch (err) {
         setResult(null);
         setError(err instanceof Error ? err.message : d.common.error);
@@ -424,12 +440,31 @@ function ByResourceTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady]);
 
+  const visiblePrincipals = useMemo(() => {
+    if (!result) return [];
+    return result.principals.filter(
+      (principal) => principal.source !== 'group-member' || !collapsedGroups.has(resourceGroupKey(principal)),
+    );
+  }, [collapsedGroups, result]);
+
+  const toggleGroup = (principal: ResourcePrincipal) => {
+    const key = resourceGroupKey(principal);
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const sourceBadge = (principal: ResourcePrincipal) => {
     switch (principal.source) {
+      case 'group':
+        return <Badge tone="info">{d.access.sourceGroup}</Badge>;
       case 'user':
         return <Badge tone="accent">{d.access.sourceUser}</Badge>;
       case 'group-member':
-        return <Badge tone="info">{d.access.sourceGroupMember}</Badge>;
+        return <Badge tone="neutral">{d.access.sourceGroupMember}</Badge>;
       default:
         return <Badge tone="warning">{d.access.sourceUnresolved}</Badge>;
     }
@@ -468,6 +503,9 @@ function ByResourceTab() {
               {d.access.principalsTitle}: <b className="tabular-nums">{result.counts.principals}</b>
             </span>
             <span>
+              {d.access.sourceGroup}: <b className="tabular-nums">{result.counts.groups || 0}</b>
+            </span>
+            <span>
               {d.access.sourceUser}: <b className="tabular-nums">{result.counts.users}</b>
             </span>
             <span>
@@ -501,62 +539,103 @@ function ByResourceTab() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {result.principals.map((principal, index) => (
-                        <TableRow key={`${principal.sid}-${principal.group_name || ''}-${index}`}>
-                          <TableCell>
-                            <div className="min-w-0">
-                              <p className="truncate text-xs font-medium text-fg" title={principal.name}>
-                                {principal.name}
-                                {principal.enabled === false ? (
-                                  <Badge tone="danger" className="ml-1.5">
-                                    {d.access.disabledUser}
-                                  </Badge>
+                      {visiblePrincipals.map((principal, index) => {
+                        const isGroup = principal.source === 'group';
+                        const isGroupMember = principal.source === 'group-member';
+                        const isCollapsed = isGroup && collapsedGroups.has(resourceGroupKey(principal));
+                        return (
+                          <TableRow
+                            key={`${principal.source}-${principal.sid}-${principal.group_name || ''}-${index}`}
+                            className={isGroup ? 'bg-surface-sunken/70' : undefined}
+                          >
+                            <TableCell>
+                              <div className={`flex min-w-0 items-center gap-2 ${isGroupMember ? 'pl-8' : ''}`}>
+                                {isGroup ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="!h-6 !w-6 shrink-0"
+                                    aria-expanded={!isCollapsed}
+                                    aria-label={accessLabel(isCollapsed ? d.access.expandGroup : d.access.collapseGroup, {
+                                      group: principal.name,
+                                    })}
+                                    title={accessLabel(isCollapsed ? d.access.expandGroup : d.access.collapseGroup, {
+                                      group: principal.name,
+                                    })}
+                                    onClick={() => toggleGroup(principal)}
+                                  >
+                                    {isCollapsed ? (
+                                      <ChevronRight className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <ChevronDown className="h-3.5 w-3.5" />
+                                    )}
+                                  </Button>
+                                ) : isGroupMember ? (
+                                  <UserRound className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
                                 ) : null}
-                              </p>
-                              <p className="truncate font-mono text-2xs text-fg-faint" title={principal.sid}>
-                                {principal.sid}
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell>{sourceBadge(principal)}</TableCell>
-                          <TableCell className="max-w-[240px]">
-                            {principal.source === 'group-member' ? (
-                              <span
-                                className="block truncate text-2xs text-fg-muted"
-                                title={principal.via_chain ? `${principal.group_name} (${principal.via_chain})` : principal.group_name}
-                              >
-                                {principal.group_name}
-                                {principal.via_chain ? ` (${principal.via_chain})` : ''}
+                                {isGroup ? <Users className="h-3.5 w-3.5 shrink-0 text-info" /> : null}
+                                <div className="min-w-0">
+                                  <p className="truncate text-xs font-medium text-fg" title={principal.name}>
+                                    {principal.name}
+                                    {principal.enabled === false ? (
+                                      <Badge tone="danger" className="ml-1.5">
+                                        {d.access.disabledUser}
+                                      </Badge>
+                                    ) : null}
+                                  </p>
+                                  {principal.sid ? (
+                                    <p className="truncate font-mono text-2xs text-fg-faint" title={principal.sid}>
+                                      {principal.sid}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>{sourceBadge(principal)}</TableCell>
+                            <TableCell className="max-w-[240px]">
+                              {isGroup ? (
+                                <span className="block truncate text-2xs text-fg-muted">
+                                  {accessLabel(d.access.membersCount, { count: principal.member_count || 0 })}
+                                </span>
+                              ) : isGroupMember ? (
+                                <span
+                                  className="block truncate text-2xs text-fg-muted"
+                                  title={principal.via_chain ? `${principal.group_name} (${principal.via_chain})` : principal.group_name}
+                                >
+                                  {principal.group_name}
+                                  {principal.via_chain ? ` (${principal.via_chain})` : ''}
+                                </span>
+                              ) : principal.source === 'unresolved' ? (
+                                <span className="block truncate text-2xs text-fg-muted">{d.access.unresolvedHint}</span>
+                              ) : (
+                                '—'
+                              )}
+                            </TableCell>
+                            <TableCell className="max-w-[180px]">
+                              <span className="block truncate text-2xs" title={principal.rights.join(', ')}>
+                                {principal.rights.join(', ')}
                               </span>
-                            ) : principal.source === 'unresolved' ? (
-                              <span className="block truncate text-2xs text-fg-muted">{d.access.unresolvedHint}</span>
-                            ) : (
-                              '—'
-                            )}
-                          </TableCell>
-                          <TableCell className="max-w-[180px]">
-                            <span className="block truncate text-2xs" title={principal.rights.join(', ')}>
-                              {principal.rights.join(', ')}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="flex gap-1">
-                              {principal.types.map((type) => (
-                                <Badge key={type} tone={type === 'deny' ? 'danger' : 'success'}>
-                                  {type === 'deny' ? d.access.deny : d.access.allow}
-                                </Badge>
-                              ))}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            {principal.risk_level ? (
-                              <Badge tone={riskTone(principal.risk_level)}>{riskLabel(principal.risk_level, locale)}</Badge>
-                            ) : (
-                              '—'
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                            </TableCell>
+                            <TableCell>
+                              <span className="flex gap-1">
+                                {principal.types.map((type) => (
+                                  <Badge key={type} tone={type === 'deny' ? 'danger' : 'success'}>
+                                    {type === 'deny' ? d.access.deny : d.access.allow}
+                                  </Badge>
+                                ))}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              {principal.risk_level ? (
+                                <Badge tone={riskTone(principal.risk_level)}>{riskLabel(principal.risk_level, locale)}</Badge>
+                              ) : (
+                                '—'
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </TableContainer>
