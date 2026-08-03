@@ -81,7 +81,7 @@ func TestResolveSendsOnlySnapshotMissesToLiveLDAP(t *testing.T) {
 	run := seedResolverSnapshot(t, db)
 	live := &stubLiveExpander{permissions: []scanner.Permission{{
 		Path:        `C:\Share`,
-		Trustee:     `CORP\charlie`,
+		Trustee:     `EXAMPLE\charlie`,
 		TrusteeSID:  testMissingSID,
 		AccountName: "charlie",
 	}}}

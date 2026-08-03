@@ -103,11 +103,12 @@ func TestResolveServerAddressPreservesExplicitAllInterfaceHosts(t *testing.T) {
 }
 
 func TestNetworkAdmissionPolicyAllowsPrivateAndDeniesSpecificCIDR(t *testing.T) {
-	policy, validationErrors := buildNetworkAdmissionPolicy(true, []string{"private"}, []string{"192.0.2.0/24"})
+	deniedNetwork := net.IPv4(10, 64, 1, 0).String() + "/24"
+	policy, validationErrors := buildNetworkAdmissionPolicy(true, []string{"private"}, []string{deniedNetwork})
 	require.Empty(t, validationErrors)
 
-	assert.False(t, policy.Allows(net.ParseIP("198.51.100.135")))
-	assert.True(t, policy.Allows(net.ParseIP("198.51.100.10")))
+	assert.False(t, policy.Allows(net.IPv4(10, 64, 1, 135)))
+	assert.True(t, policy.Allows(net.IPv4(10, 64, 2, 10)))
 	assert.True(t, policy.Allows(net.ParseIP("127.0.0.1")))
 }
 

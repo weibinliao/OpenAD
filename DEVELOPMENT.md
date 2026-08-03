@@ -151,6 +151,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-desktop-wind
 OpenAD 的公开 Git 根目录是 `<repository-root>`。禁止执行大范围 Git 清理或回退；首次
 提交前必须核对源码边界，确保不包含本地代理状态、缓存、备份、凭据或其他项目文件。
 
+公开提交前还应运行 `.\scripts\audit-public-source.ps1`，确认示例不含私有地址、本地用户路径或
+环境专属目录身份。
+
 ## OpenAD Development Guide
 
 This file is the canonical entry point for building, testing, packaging, and cleaning OpenAD. Agent-based development must begin by reading `AGENTS.md` and, when it exists in a maintainer workspace, `.codex/memory.md`.
@@ -285,3 +288,6 @@ Extended cleanup requires an explicit switch. Read `docs/PROJECT_HYGIENE.md` fir
 The OpenAD public Git root is `<repository-root>`. Do not perform broad Git cleanup or rollback. Verify
 the source boundary before the first public commit so local agent state, caches, backups, credentials,
 and unrelated projects are excluded.
+
+Before a public commit, also run `.\scripts\audit-public-source.ps1` to confirm examples contain no
+private addresses, local user paths, or environment-specific directory identities.

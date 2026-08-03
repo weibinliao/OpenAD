@@ -100,9 +100,9 @@ func seedFixture(t *testing.T, db *gorm.DB) fixture {
 	}
 
 	permissions := []models.Permission{
-		{ScanSessionID: session.ID, Path: `D:\Share\HR`, Trustee: `CORP\alice`, TrusteeSID: aliceSID, Rights: "FullControl", Type: "allow", RiskLevel: "high"},
-		{ScanSessionID: session.ID, Path: `D:\Share\Sales`, Trustee: `CORP\Sales-Team`, TrusteeSID: salesSID, Rights: "Modify", Type: "allow", RiskLevel: "medium"},
-		{ScanSessionID: session.ID, Path: `D:\Share\Common`, Trustee: `CORP\All-Staff`, TrusteeSID: staffSID, Rights: "ReadAndExecute", Type: "allow", Inherited: true},
+		{ScanSessionID: session.ID, Path: `D:\Share\HR`, Trustee: `EXAMPLE\alice`, TrusteeSID: aliceSID, Rights: "FullControl", Type: "allow", RiskLevel: "high"},
+		{ScanSessionID: session.ID, Path: `D:\Share\Sales`, Trustee: `EXAMPLE\Sales-Team`, TrusteeSID: salesSID, Rights: "Modify", Type: "allow", RiskLevel: "medium"},
+		{ScanSessionID: session.ID, Path: `D:\Share\Common`, Trustee: `EXAMPLE\All-Staff`, TrusteeSID: staffSID, Rights: "ReadAndExecute", Type: "allow", Inherited: true},
 		{ScanSessionID: session.ID, Path: `D:\Share\Public`, Trustee: "Everyone", TrusteeSID: everyoneSID, Rights: "FullControl", Type: "allow", RiskLevel: "critical"},
 	}
 	if err := db.Create(&permissions).Error; err != nil {
@@ -252,7 +252,7 @@ func TestByUserUsesLatestCompletedSessionPerRoot(t *testing.T) {
 		t.Fatalf("seed running session: %v", err)
 	}
 	if err := db.Create(&models.Permission{
-		ScanSessionID: newer.ID, Path: `D:\Share\New`, Trustee: `CORP\alice`,
+		ScanSessionID: newer.ID, Path: `D:\Share\New`, Trustee: `EXAMPLE\alice`,
 		TrusteeSID: aliceSID, Rights: "Read", Type: "allow",
 	}).Error; err != nil {
 		t.Fatalf("seed newer permission: %v", err)
@@ -368,7 +368,7 @@ func TestByResourceUsesOriginatingGroupAsParent(t *testing.T) {
 	if err := db.Create(&models.Permission{
 		ScanSessionID:             seed.sessionID,
 		Path:                      `D:\Share\Sales`,
-		Trustee:                   `CORP\alice`,
+		Trustee:                   `EXAMPLE\alice`,
 		TrusteeSID:                aliceSID,
 		Rights:                    "Modify",
 		Type:                      "allow",
@@ -424,7 +424,7 @@ func TestByResourceKeepsGroupWithoutSnapshotMembers(t *testing.T) {
 	if err := db.Create(&models.Permission{
 		ScanSessionID: seed.sessionID,
 		Path:          `D:\Share`,
-		Trustee:       `CORP\Domain Users`,
+		Trustee:       `EXAMPLE\Domain Users`,
 		TrusteeSID:    emptyGroupSID,
 		Rights:        "ReadAndExecute",
 		Type:          "allow",

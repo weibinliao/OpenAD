@@ -1,6 +1,6 @@
 # OpenAD 项目开发约束
 
-本文件适用于 `<repository-root>` 整个子目录，仅为 OpenAD 项目级规则，不得复制到 Codex
+本文件适用于当前 OpenAD 仓库根目录及其子目录，仅为 OpenAD 项目级规则，不得复制到 Codex
 或其他代理的全局配置中。
 
 ## 开始工作前必须阅读
@@ -132,7 +132,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-desktop-wind
 
 ## English Reference
 
-This file applies only to the OpenAD project under `<repository-root>`. It must not be copied into
+This file applies only to the current OpenAD repository root and its subdirectories. It must not be copied into
 global Codex or agent configuration.
 
 Before changing code, read the latest on-disk `AGENTS.md`, `DEVELOPMENT.md`, Git status, and the

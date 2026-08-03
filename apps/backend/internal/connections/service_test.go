@@ -32,10 +32,10 @@ func TestCreateEncryptsPassword(t *testing.T) {
 	service := newTestService(t)
 
 	profile, err := service.Create(ProfileInput{
-		Name:     "lab-dc",
-		Server:   "ldap://dc01.lab.local",
-		BaseDN:   "DC=lab,DC=local",
-		BindUser: "LAB\\svc-reader",
+		Name:     "example-dc",
+		Server:   "ldap://dc01.example.com",
+		BaseDN:   "DC=example,DC=com",
+		BindUser: "EXAMPLE\\svc-reader",
 		Password: "Secr3t!",
 	})
 	if err != nil {
@@ -58,14 +58,14 @@ func TestUpdateKeepsPasswordWhenEmpty(t *testing.T) {
 	service := newTestService(t)
 
 	profile, err := service.Create(ProfileInput{
-		Name: "lab", Server: "dc01", BaseDN: "DC=lab", BindUser: "u", Password: "keepme",
+		Name: "example", Server: "dc01", BaseDN: "DC=example", BindUser: "u", Password: "keepme",
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	if _, err := service.Update(profile.ID, ProfileInput{
-		Name: "lab-renamed", Server: "dc02", BaseDN: "DC=lab", BindUser: "u2", Password: "",
+		Name: "example-renamed", Server: "dc02", BaseDN: "DC=example", BindUser: "u2", Password: "",
 	}); err != nil {
 		t.Fatalf("Update: %v", err)
 	}

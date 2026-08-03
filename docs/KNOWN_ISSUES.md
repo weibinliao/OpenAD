@@ -10,7 +10,7 @@
 2. 当前正式桌面端是 .NET WinForms/WebView2。
    - `apps/desktop` 是历史 Tauri 探索，不能作为发布依据。
 
-3. 当前实际 Git 根目录是父目录 `<workspace-parent>`。
+3. 历史工作区曾以 `<workspace-parent>` 作为实际 Git 根目录。
    - 大部分 OpenAD 源码尚未进入 Git 索引。
    - 对外发布前必须修复仓库边界并提交完整源码基线。
 
@@ -61,7 +61,7 @@
 
 1. NTFS permission scanning is verified only on Windows. The non-Windows scanner returns an unsupported error.
 2. The shipping desktop application is .NET WinForms/WebView2. `apps/desktop` is historical Tauri exploration and is not a release source.
-3. The effective Git root is currently the parent directory `<workspace-parent>`. Most OpenAD source is not indexed, so the repository boundary and complete source baseline must be fixed before public release.
+3. The historical worktree used `<workspace-parent>` as its effective Git root. The repository boundary and complete source baseline must be fixed before public release.
 4. GitHub workflows inside this project will not run while the parent directory remains the effective Git root. Enable them only after establishing the standard repository root.
 5. The project uses an open-core dual-license structure. The repository body excluding `ee/` is under
    AGPL-3.0; `ee/` is expressly excluded and governed by a commercial license. See

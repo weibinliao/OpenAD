@@ -60,7 +60,7 @@ func seedAccessFixture(t *testing.T, db *gorm.DB) {
 	session := models.ScanSession{RootPath: `D:\Share`, Status: "completed", StartedAt: now, FinishedAt: &finished}
 	require.NoError(t, db.Create(&session).Error)
 	require.NoError(t, db.Create(&[]models.Permission{
-		{ScanSessionID: session.ID, Path: `D:\Share\Sales`, Trustee: `CORP\Sales`, TrusteeSID: "S-1-5-21-9-9-9-2001", Rights: "Modify", Type: "allow"},
+		{ScanSessionID: session.ID, Path: `D:\Share\Sales`, Trustee: `EXAMPLE\Sales`, TrusteeSID: "S-1-5-21-9-9-9-2001", Rights: "Modify", Type: "allow"},
 		{ScanSessionID: session.ID, Path: `D:\Share\Public`, Trustee: "Everyone", TrusteeSID: "S-1-1-0", Rights: "Read", Type: "allow"},
 	}).Error)
 }

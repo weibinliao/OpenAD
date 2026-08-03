@@ -11,9 +11,9 @@ jest.mock('../../contexts/ADConnectionContext', () => ({
   useADConnection: () => ({
     activeProfile: {
       id: 'profile-1',
-      name: 'EXAMPLE DC',
+      name: 'Example DC',
       server: 'dc01.example.com',
-      base_dn: 'DC=example,DC=cn',
+      base_dn: 'DC=example,DC=com',
       bind_user: 'EXAMPLE\\operator',
       is_default: true,
       last_tested_at: '2026-07-11T00:00:00Z',

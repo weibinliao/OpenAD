@@ -25,6 +25,7 @@
 
 #### 变更
 
+- 公开示例现在统一使用 `example.com`、RFC 5737 文档地址和参数化扫描根目录；示例配置默认仅监听本机，且不再提供可直接使用的数据库口令或 JWT 密钥。
 - 新扫描现在绑定活动 AD 连接最新的已完成快照，优先从本地快照解析用户、组、嵌套成员和 Windows 特殊 SID，仅将快照未命中项交给实时 LDAP 补充。
 - 扫描完成摘要和报告中心现在显示 SID 解析来源与解析数量；历史会话会在读取时选择绑定快照，或按扫描前 SID 覆盖率推断最合适的已完成快照进行只读补全，不改写原始 ACL 证据。
 
@@ -103,6 +104,7 @@
 
 #### Changed
 
+- Public examples now use `example.com`, RFC 5737 documentation addresses, and a parameterized scan root. Example configuration binds locally by default and no longer provides runnable database passwords or a JWT secret.
 - New scans now bind to the active AD connection's latest completed snapshot, resolving users, groups, nested memberships, and well-known Windows SIDs locally before sending only snapshot misses to live LDAP.
 - Scan completion and Report Center now surface SID-resolution sources and counts. Historical sessions are enriched read-only from their bound snapshot or the completed pre-scan snapshot with the best SID coverage, without rewriting stored ACL evidence.
 

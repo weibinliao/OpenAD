@@ -83,11 +83,11 @@ describe('AppShellV2 desktop workspace', () => {
           ok: true,
           json: async () => ({
             users: [{
-              dn: 'CN=Alice,DC=lab,DC=local',
+              dn: 'CN=Alice,DC=example,DC=com',
               username: 'azhang',
               display_name: 'Alice Zhang',
-              email: 'alice@lab.local',
-              groups: ['CN=Domain Admins,DC=lab,DC=local'],
+              email: 'alice@example.com',
+              groups: ['CN=Domain Admins,DC=example,DC=com'],
             }],
           }),
         } as Response);

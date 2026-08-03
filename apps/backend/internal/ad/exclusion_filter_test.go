@@ -41,6 +41,6 @@ func TestExclusionFilterDoesNotTurnQualifiedWildcardIntoGlobalWildcard(t *testin
 
 	assert.True(t, filter.ShouldExclude(`NT AUTHORITY\SYSTEM`))
 	assert.False(t, filter.ShouldExclude(`S-1-5-21-1-2-3-1001`))
-	assert.False(t, filter.ShouldExclude(`CORP\Finance`))
+	assert.False(t, filter.ShouldExclude(`EXAMPLE\Finance`))
 	assert.False(t, filter.ShouldExclude(`alice`))
 }

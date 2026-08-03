@@ -10,7 +10,8 @@ services:
       - "8080:8080"
     volumes:
       - type: bind
-        source: C:\
+        # Set OPENAD_SCAN_ROOT to one folder or share that the container may scan.
+        source: "${OPENAD_SCAN_ROOT:?Set OPENAD_SCAN_ROOT to the folder to scan}"
         target: C:\host
         read_only: true
     environment:

@@ -85,7 +85,7 @@ func TestDetectChanges_UsesTrusteeSIDAsComparisonKey(t *testing.T) {
 		newPermission(`C:\shared`, "DOMAIN\\alice", "S-1-5-21-500", "Read"),
 	}
 	currentPerms := []models.Permission{
-		newPermission(`C:\shared`, "alice@domain.local", "S-1-5-21-500", "Read"),
+		newPermission(`C:\shared`, "alice@example.com", "S-1-5-21-500", "Read"),
 	}
 
 	report, err := engine.DetectChanges(baselinePerms, currentPerms)

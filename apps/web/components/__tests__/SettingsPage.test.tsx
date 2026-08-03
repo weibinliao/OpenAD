@@ -49,10 +49,10 @@ jest.mock('../../contexts/ThemeContext', () => ({
 const storedProfiles: ConnectionProfile[] = [
   {
     id: 'profile-1',
-    name: 'Lab DC',
-    server: 'ldap://dc01.lab.local:389',
-    base_dn: 'DC=lab,DC=local',
-    bind_user: 'LAB\\svc-scan',
+    name: 'Example DC',
+    server: 'ldap://dc01.example.com:389',
+    base_dn: 'DC=example,DC=com',
+    bind_user: 'EXAMPLE\\svc-scan',
     is_default: true,
     last_tested_at: '2026-07-01T10:00:00Z',
     last_test_ok: true,
@@ -61,10 +61,10 @@ const storedProfiles: ConnectionProfile[] = [
   },
   {
     id: 'profile-2',
-    name: 'Staging DC',
-    server: 'ldap://dc02.lab.local:389',
-    base_dn: 'DC=staging,DC=local',
-    bind_user: 'LAB\\svc-stage',
+    name: 'Test DC',
+    server: 'ldap://dc02.example.com:389',
+    base_dn: 'DC=staging,DC=test',
+    bind_user: 'EXAMPLE\\svc-stage',
     is_default: false,
     last_tested_at: null,
     last_test_ok: null,
@@ -126,8 +126,8 @@ describe('SettingsPage', () => {
   test('renders stored AD connection profiles with default, active and test-status badges', async () => {
     render(<SettingsPage />);
 
-    expect(await screen.findByText('Lab DC')).toBeInTheDocument();
-    expect(screen.getByText('Staging DC')).toBeInTheDocument();
+    expect(await screen.findByText('Example DC')).toBeInTheDocument();
+    expect(screen.getByText('Test DC')).toBeInTheDocument();
     expect(screen.getByText('Default')).toBeInTheDocument();
     expect(screen.getByText('OK')).toBeInTheDocument();
     expect(screen.getByText('Never tested')).toBeInTheDocument();

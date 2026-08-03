@@ -8,8 +8,8 @@ func TestDNToDNSDomain(t *testing.T) {
 		want string
 	}{
 		{"DC=example,DC=com", "example.com"},
-		{"dc=corp,dc=example,dc=cn", "corp.example.cn"},
-		{"OU=Users,DC=lab,DC=local", "lab.local"},
+		{"dc=example,dc=net", "example.net"},
+		{"OU=Users,DC=example,DC=com", "example.com"},
 		{"", ""},
 		{"CN=Config", ""},
 	}
@@ -30,7 +30,7 @@ func TestNormalizeBindUser(t *testing.T) {
 		{"EXAMPLE\\alice", "example.com", "EXAMPLE\\alice", false},
 		{"alice@example.com", "example.com", "alice@example.com", false},
 		{"alice", "", "alice", false},
-		{"  sam  ", "lab.local", "sam@lab.local", true},
+		{"  sam  ", "example.net", "sam@example.net", true},
 	}
 	for _, c := range cases {
 		got, normalized := NormalizeBindUser(c.user, c.domain)

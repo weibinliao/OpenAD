@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: ${TEST_DATABASE_NAME:-folder_security_test}
       POSTGRES_USER: ${TEST_DATABASE_USER:-test}
-      POSTGRES_PASSWORD: ${TEST_DATABASE_PASSWORD:-test}
+      POSTGRES_PASSWORD: ${TEST_DATABASE_PASSWORD:-test-only-password}
     ports:
       - "${TEST_DATABASE_PORT:-5433}:5432"
     healthcheck:

@@ -25,7 +25,7 @@ Add `TestByResourceUsesOriginatingGroupAsParent` with a completed snapshot conta
 models.Permission{
     ScanSessionID: session.ID,
     Path: `D:\Share\Sales`,
-    Trustee: `CORP\alice`,
+    Trustee: `EXAMPLE\alice`,
     TrusteeSID: aliceSID,
     Rights: "Modify",
     Type: "allow",
@@ -308,7 +308,7 @@ Expected: `[OK] Desktop package created` at
 - [ ] **Step 5: Start the package and validate the reported path**
 
 Start `OpenAD.exe`, wait for `http://127.0.0.1:18080/health`, and POST the exact path
-`\\files.example.com\example-team` to `/api/access/by-resource`. Assert the response begins with group
+`\\files.example.com\software\example-team` to `/api/access/by-resource`. Assert the response begins with group
 parents, each `group-member` follows its group, `counts.groups` is nonzero, and users carried by
 `originating_group` are not counted as direct users. Confirm ports `18080` and `43110`, window title
 `OpenAD`, process responsiveness, Web HTTP 200, and the saved AD connection test.

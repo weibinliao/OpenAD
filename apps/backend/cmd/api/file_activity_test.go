@@ -19,7 +19,7 @@ func TestParseWindowsFileActivityXML(t *testing.T) {
     <Provider Name="Microsoft-Windows-Security-Auditing" />
     <EventID>4663</EventID>
     <TimeCreated SystemTime="2026-05-08T10:00:00.0000000Z" />
-    <Computer>FS01.internal.local</Computer>
+    <Computer>fs01.example.com</Computer>
   </System>
   <EventData>
     <Data Name="SubjectDomainName">DOMAIN</Data>
@@ -42,7 +42,7 @@ func TestParseWindowsFileActivityXML(t *testing.T) {
 	assert.Equal(t, "DOMAIN\\alice", items[0].User)
 	assert.Equal(t, "S-1-5-21-1000", items[0].UserSID)
 	assert.Equal(t, "C:\\Shares\\Finance\\budget.xlsx", items[0].Path)
-	assert.Equal(t, "FS01.internal.local", items[0].Computer)
+	assert.Equal(t, "fs01.example.com", items[0].Computer)
 }
 
 func TestShareAccessEventBuildsPathFromShareData(t *testing.T) {

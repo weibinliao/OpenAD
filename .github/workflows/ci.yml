@@ -12,6 +12,13 @@ permissions:
   contents: read
 
 jobs:
+  public-source:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit public source examples
+        run: .\scripts\audit-public-source.ps1
+
   backend:
     runs-on: windows-latest
     defaults:

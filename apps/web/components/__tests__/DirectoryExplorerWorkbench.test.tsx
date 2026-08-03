@@ -15,8 +15,8 @@ describe('DirectoryExplorerWorkbench', () => {
       if (url.endsWith('/api/ad/tree')) {
         return response({
           nodes: [
-            { dn: 'CN=Domain Admins,DC=lab,DC=local', name: 'Domain Admins', node_type: 'group', has_children: true },
-            { dn: 'CN=Alice,DC=lab,DC=local', name: 'Alice', node_type: 'user', has_children: false },
+            { dn: 'CN=Domain Admins,DC=example,DC=com', name: 'Domain Admins', node_type: 'group', has_children: true },
+            { dn: 'CN=Alice,DC=example,DC=com', name: 'Alice', node_type: 'user', has_children: false },
           ],
           pagination: { total_pages: 1 },
         });
@@ -24,15 +24,15 @@ describe('DirectoryExplorerWorkbench', () => {
       if (url.endsWith('/api/ad/users/query')) {
         return response({
           users: [{
-            dn: 'CN=Alice,DC=lab,DC=local',
+            dn: 'CN=Alice,DC=example,DC=com',
             username: 'azhang',
             display_name: 'Alice Zhang',
-            email: 'alice@lab.local',
+            email: 'alice@example.com',
             department: 'IT',
-            domain: 'LAB.LOCAL',
+            domain: 'EXAMPLE.COM',
             group_dns: [
-              'CN=Domain Admins,DC=lab,DC=local',
-              'CN=File Operators,DC=lab,DC=local',
+              'CN=Domain Admins,DC=example,DC=com',
+              'CN=File Operators,DC=example,DC=com',
             ],
             groups: [
               'Domain Admins',
@@ -43,12 +43,12 @@ describe('DirectoryExplorerWorkbench', () => {
         });
       }
       if (url.endsWith('/api/ad/groups/query')) {
-        return response({ groups: [{ dn: 'CN=File Operators,DC=lab,DC=local', name: 'File Operators' }] });
+        return response({ groups: [{ dn: 'CN=File Operators,DC=example,DC=com', name: 'File Operators' }] });
       }
       if (url.endsWith('/api/ad/groups/members')) {
         return response({
           resolution: {
-            members: [{ dn: 'CN=Bob Chen,DC=lab,DC=local', name: 'Bob Chen', sam_account_name: 'bchen', type: 'user', depth: 0 }],
+            members: [{ dn: 'CN=Bob Chen,DC=example,DC=com', name: 'Bob Chen', sam_account_name: 'bchen', type: 'user', depth: 0 }],
           },
         });
       }
@@ -90,7 +90,7 @@ describe('DirectoryExplorerWorkbench', () => {
     fireEvent.click(searchButton);
 
     expect(await screen.findByText('Alice Zhang')).toBeInTheDocument();
-    expect(screen.getByText('CN=Alice,DC=lab,DC=local')).toBeInTheDocument();
+    expect(screen.getByText('CN=Alice,DC=example,DC=com')).toBeInTheDocument();
     expect(screen.getByText('File Operators')).toBeInTheDocument();
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/ad/users/query'), expect.objectContaining({ method: 'POST' }));
@@ -131,7 +131,7 @@ describe('DirectoryExplorerWorkbench', () => {
     expect(within(inspector).getByText('Domain Admins')).toBeInTheDocument();
     expect(within(inspector).getByText('File Operators')).toBeInTheDocument();
     expect(within(inspector).queryByText('Nested Access')).not.toBeInTheDocument();
-    expect(within(inspector).getByText('alice@lab.local')).toBeInTheDocument();
+    expect(within(inspector).getByText('alice@example.com')).toBeInTheDocument();
   });
 
   test('opens a user direct group with its distinguished name', async () => {
@@ -148,7 +148,7 @@ describe('DirectoryExplorerWorkbench', () => {
       expect(groupMembersCall).toBeDefined();
       expect(JSON.parse(String(groupMembersCall?.[1]?.body))).toMatchObject({
         connection_id: 'profile-1',
-        group_dn: 'CN=File Operators,DC=lab,DC=local',
+        group_dn: 'CN=File Operators,DC=example,DC=com',
       });
     });
   });
