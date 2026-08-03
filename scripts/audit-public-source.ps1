@@ -78,11 +78,11 @@ try {
     }
 
     $requiredConfig = @(
-        @{ Path = '.env.example'; Pattern = '(?m)^APP_HOST=127\.0\.0\.1$'; Name = 'local APP_HOST example' }
-        @{ Path = '.env.example'; Pattern = '(?m)^POSTGRES_PASSWORD=replace-with-a-strong-random-password$'; Name = 'database password placeholder' }
-        @{ Path = '.env.example'; Pattern = '(?m)^CLICKHOUSE_PASSWORD=replace-with-a-strong-random-password$'; Name = 'analytics password placeholder' }
-        @{ Path = '.env.example'; Pattern = '(?m)^REDIS_PASSWORD=replace-with-a-strong-random-password$'; Name = 'cache password placeholder' }
-        @{ Path = '.env.example'; Pattern = '(?m)^JWT_SECRET=replace-with-a-generated-32-byte-secret$'; Name = 'JWT secret placeholder' }
+        @{ Path = '.env.example'; Pattern = '(?m)^APP_HOST=127\.0\.0\.1\r?$'; Name = 'local APP_HOST example' }
+        @{ Path = '.env.example'; Pattern = '(?m)^POSTGRES_PASSWORD=replace-with-a-strong-random-password\r?$'; Name = 'database password placeholder' }
+        @{ Path = '.env.example'; Pattern = '(?m)^CLICKHOUSE_PASSWORD=replace-with-a-strong-random-password\r?$'; Name = 'analytics password placeholder' }
+        @{ Path = '.env.example'; Pattern = '(?m)^REDIS_PASSWORD=replace-with-a-strong-random-password\r?$'; Name = 'cache password placeholder' }
+        @{ Path = '.env.example'; Pattern = '(?m)^JWT_SECRET=replace-with-a-generated-32-byte-secret\r?$'; Name = 'JWT secret placeholder' }
     )
     foreach ($check in $requiredConfig) {
         $content = Get-Content -Raw -LiteralPath $check.Path -Encoding utf8
