@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.3.1
 	github.com/gorilla/websocket v1.5.1
 	github.com/spf13/cobra v1.8.0
-	github.com/stretchr/testify v1.8.3
+	github.com/stretchr/testify v1.11.1
 	github.com/xuri/excelize/v2 v2.8.0
 	golang.org/x/sys v0.26.0
 	gorm.io/driver/postgres v1.5.2
