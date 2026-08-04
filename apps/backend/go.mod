@@ -8,7 +8,7 @@ require (
 	github.com/go-asn1-ber/asn1-ber v1.5.5
 	github.com/go-ldap/ldap/v3 v3.4.6
 	github.com/google/uuid v1.3.1
-	github.com/gorilla/websocket v1.5.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.8.3
 	github.com/xuri/excelize/v2 v2.8.0
