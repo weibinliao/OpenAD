@@ -2,6 +2,7 @@
 param(
     [string]$Version = '6.7.3',
     [string]$ExpectedSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732',
+    [string]$ChineseLanguageRevision = '9b78a725e9759217ee399fc5ed5b412f7dc81bf6',
     [string]$ChineseLanguageSha256 = '3C2C27DB8E346EE824F058ABDB56C4AC2F599D8315B4C7089D5D5615C8D2CF54'
 )
 
@@ -52,8 +53,8 @@ if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
 
 $languageDir = Join-Path $installDir 'Languages'
 $languageFile = Join-Path $languageDir 'ChineseSimplified.isl'
-$languageDownload = Join-Path $downloadDir 'ChineseSimplified.isl'
-$languageUrl = 'https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/ChineseSimplified.isl'
+$languageDownload = Join-Path $downloadDir "ChineseSimplified-$ChineseLanguageRevision.isl"
+$languageUrl = "https://raw.githubusercontent.com/jrsoftware/issrc/$ChineseLanguageRevision/Files/Languages/ChineseSimplified.isl"
 if (-not (Test-Path -LiteralPath $languageFile -PathType Leaf)) {
     if (-not (Test-Path -LiteralPath $languageDownload -PathType Leaf)) {
         Write-Host '[INFO] Downloading the Inno Setup Simplified Chinese translation...'

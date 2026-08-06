@@ -56,7 +56,10 @@ public sealed class DesktopInstallerTests
 
         Assert.Contains("6.7.3", setupScript, StringComparison.Ordinal);
         Assert.Contains("ExpectedSha256", setupScript, StringComparison.Ordinal);
+        Assert.Contains("ChineseLanguageRevision", setupScript, StringComparison.Ordinal);
         Assert.Contains("ChineseLanguageSha256", setupScript, StringComparison.Ordinal);
+        Assert.Contains("raw.githubusercontent.com/jrsoftware/issrc/$ChineseLanguageRevision/", setupScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("raw.githubusercontent.com/jrsoftware/issrc/main/", setupScript, StringComparison.Ordinal);
         Assert.Contains("Installed Inno Setup language checksum mismatch", setupScript, StringComparison.Ordinal);
         Assert.Contains("Get-AuthenticodeSignature", setupScript, StringComparison.Ordinal);
     }
