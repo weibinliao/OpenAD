@@ -203,29 +203,48 @@
   min-height: 42px;
   padding: 10px 13px;
   border-bottom: 1px solid hsl(var(--border-default));
+  gap: 1px;
 }
 
 .openad-quick-connect-card .openad-quick-connect-header h3 {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.openad-quick-connect-card .openad-quick-connect-header p {
   font-size: 11px;
   line-height: 16px;
 }
 
-.openad-quick-connect-card .openad-quick-connect-header p {
-  font-size: 8px;
-  line-height: 13px;
+.openad-quick-connect-card .openad-quick-connect-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.openad-quick-connect-card .openad-quick-connect-field-hint {
+  min-height: 32px;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 16px;
 }
 
 @media (min-width: 901px) {
   .openad-quick-connect-card .openad-quick-connect-content {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(112px, 0.35fr);
-    align-items: end;
-    gap: 10px;
+    grid-template-columns: minmax(240px, 1.2fr) minmax(240px, 1.1fr) minmax(200px, 1fr) minmax(112px, 0.45fr);
+    align-items: start;
+    column-gap: 12px;
+    row-gap: 10px;
     padding: 12px 13px;
   }
 
   .openad-quick-connect-card .openad-quick-connect-content > * {
     margin-top: 0;
+  }
+
+  .openad-quick-connect-card .openad-quick-connect-content > div {
+    min-width: 0;
   }
 
   .openad-quick-connect-card .openad-quick-connect-content > p {
@@ -235,6 +254,9 @@
   .openad-quick-connect-card .openad-quick-connect-content > button {
     grid-column: 4;
     grid-row: 1;
+    align-self: start;
+    min-width: 112px;
+    margin-top: 20px;
   }
 }
 

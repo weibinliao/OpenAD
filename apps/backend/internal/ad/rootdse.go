@@ -12,12 +12,12 @@ import (
 // DiscoveryResult carries what we can learn from a domain controller's RootDSE
 // so operators only need to supply server + account + password.
 type DiscoveryResult struct {
-	BaseDN       string `json:"base_dn"`       // defaultNamingContext, e.g. DC=example,DC=com
-	DNSDomain    string `json:"dns_domain"`    // e.g. example.com
-	DNSHostName  string `json:"dns_host_name"` // e.g. dc01.example.com
-	BindUser     string `json:"bind_user"`     // normalized bind identity actually used
-	Normalized   bool   `json:"normalized"`    // true when the bare username was upgraded to a UPN
-	ServerURL    string `json:"server_url"`
+	BaseDN      string `json:"base_dn"`       // defaultNamingContext, e.g. DC=example,DC=com
+	DNSDomain   string `json:"dns_domain"`    // e.g. example.com
+	DNSHostName string `json:"dns_host_name"` // e.g. dc01.example.com
+	BindUser    string `json:"bind_user"`     // normalized bind identity actually used
+	Normalized  bool   `json:"normalized"`    // true when the supplied identity was rewritten before bind
+	ServerURL   string `json:"server_url"`
 }
 
 // dnToDNSDomain converts "DC=example,DC=com" to "example.com".
@@ -34,16 +34,30 @@ func dnToDNSDomain(dn string) string {
 }
 
 // NormalizeBindUser upgrades a bare sAMAccountName to a UPN using the
-// discovered DNS domain. DOMAIN\user and user@domain forms pass through.
+// discovered DNS domain. It also corrects the common DNS-domain backslash
+// form (example.com\user) to a UPN while preserving DOMAIN\user.
 func NormalizeBindUser(username, dnsDomain string) (string, bool) {
 	trimmed := strings.TrimSpace(username)
-	if trimmed == "" || strings.Contains(trimmed, "\\") || strings.Contains(trimmed, "@") {
+	if trimmed == "" || strings.Contains(trimmed, "@") {
+		return trimmed, false
+	}
+
+	if strings.Count(trimmed, "\\") == 1 {
+		parts := strings.SplitN(trimmed, "\\", 2)
+		domain := strings.TrimSpace(parts[0])
+		account := strings.TrimSpace(parts[1])
+		if domain != "" && account != "" && strings.Contains(domain, ".") {
+			return account + "@" + domain, true
+		}
+		return trimmed, false
+	}
+	if strings.Contains(trimmed, "\\") {
 		return trimmed, false
 	}
 	if strings.TrimSpace(dnsDomain) == "" {
 		return trimmed, false
 	}
-	return trimmed + "@" + dnsDomain, true
+	return trimmed + "@" + strings.TrimSpace(dnsDomain), true
 }
 
 func readRootDSE(conn *ldap.Conn) (baseDN, dnsHostName string, err error) {
@@ -86,7 +100,7 @@ func Discover(server, username, password string) (*DiscoveryResult, error) {
 	bindUser, normalized := NormalizeBindUser(username, dnsDomain)
 	if err := conn.Bind(bindUser, password); err != nil {
 		if normalized {
-			return nil, fmt.Errorf("bind failed as %s: %w (try DOMAIN\\user or user@domain form)", bindUser, err)
+			return nil, fmt.Errorf("bind failed as %s: %w (use user@example.com for a DNS domain or EXAMPLE\\user for a NetBIOS domain)", bindUser, err)
 		}
 		return nil, fmt.Errorf("bind failed: %w", err)
 	}

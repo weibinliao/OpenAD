@@ -119,6 +119,7 @@ export function ADConnectionProvider({ children }: { children: React.ReactNode }
   const [hydrated, setHydrated] = useState(false);
   const [profiles, setProfiles] = useState<ConnectionProfile[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(false);
+  const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [profilesOffline, setProfilesOffline] = useState(false);
   const [activeProfileId, setActiveProfileIdState] = useState<string | null>(null);
 
@@ -169,6 +170,7 @@ export function ADConnectionProvider({ children }: { children: React.ReactNode }
         throw new Error(data.error || 'connections unavailable');
       }
       setProfiles(Array.isArray(data.items) ? data.items : []);
+      setProfilesLoaded(true);
       setProfilesOffline(false);
     } catch {
       // Backend offline or old build without connection endpoints: degrade to empty list.
@@ -210,12 +212,18 @@ export function ADConnectionProvider({ children }: { children: React.ReactNode }
     return fallback || null;
   }, [activeProfileId, profiles]);
 
-  // When the active profile exists and its last test succeeded, reflect it in the
-  // connection snapshot so the shell AD badge shows connected state.
+  // Keep the legacy connection snapshot aligned with the server-side profile list.
+  // This also clears a stale "connected" badge when the final profile is deleted.
   useEffect(() => {
-    if (!activeProfile || !activeProfile.last_test_ok) {
+    if (!profilesLoaded || profilesLoading || profilesOffline) {
       return;
     }
+    if (!activeProfile) {
+      setState(defaultState);
+      return;
+    }
+    if (!activeProfile.last_test_ok) return;
+
     setState((prev) => ({
       config: prev.config,
       connection: {
@@ -224,7 +232,7 @@ export function ADConnectionProvider({ children }: { children: React.ReactNode }
         testedAt: activeProfile.last_tested_at ?? prev.connection.testedAt ?? null,
       },
     }));
-  }, [activeProfile]);
+  }, [activeProfile, profilesLoaded, profilesLoading, profilesOffline]);
 
   const value = useMemo<ADConnectionContextValue>(
     () => ({

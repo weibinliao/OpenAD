@@ -24,8 +24,8 @@
 
 ## 产品与命名
 
-- [ ] 明确 OpenAD 是产品名称，PermissionProtector 是可执行文件、命名空间和本地数据
-      路径的临时兼容名称。
+- [ ] 明确 OpenAD 是产品名称，PermissionProtector 只存在于内部命名空间、兼容环境变量和
+      旧数据迁移路径。
 - [ ] 确认应用图标、可执行文件元数据、窗口标题、文档和发布包名称符合统一命名策略。
 - [ ] 检查所有界面文案，删除没有实现依据的能力和合规声明。
 
@@ -72,7 +72,7 @@ This checklist records work required before a public OpenAD release. The control
 
 ### Product and Naming
 
-- [ ] State that OpenAD is the product name and PermissionProtector is a temporary compatibility name for executables, namespaces, and local data paths.
+- [ ] State that OpenAD is the product name and PermissionProtector remains only in internal namespaces, compatibility environment variables, and legacy data migration paths.
 - [ ] Align application icons, executable metadata, window titles, documentation, and package names with the approved naming strategy.
 - [ ] Review all interface copy and remove capability or compliance claims without implementation evidence.
 

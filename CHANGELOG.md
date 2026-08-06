@@ -4,11 +4,14 @@
 
 ## 中文
 
-### 未发布
+### 1.0.0 - 2026-08-06
 
 #### 新增
 
 - AD 组详情新增成员报表导出：默认下载 Excel，也可从菜单选择 CSV；导出范围跟随当前“仅直属成员/包含嵌套成员”选择，并包含成员身份、SID、部门、层级和成员路径。
+- 新增按当前用户安装的 `win-x64` OpenAD 安装程序构建流程：输出自包含 .NET 的 `OpenAD.exe`、
+  便携 ZIP 与对应 SHA-256 校验文件，并在生成前后审计数据库、日志、环境文件、密钥、本机路径、
+  邮箱、环境域名和内网地址；发布物不携带构建者配置或应用数据，新电脑首次启动为空白。
 
 - 确立 OpenAD open core 双许可结构：除 `ee/` 外的仓库主体采用 AGPL-3.0，新增
   `LICENSING.md`、`NOTICE` 及 `ee/` 商业许可边界。
@@ -25,6 +28,9 @@
 
 #### 变更
 
+- 正式发布版本统一为 `1.0.0`，Windows 安装包、桌面宿主、Go 服务、CLI、便携包和项目文件均使用 OpenAD 文件名；旧名称仅保留在数据迁移、环境变量和内部命名空间兼容层。
+- Web 构建链升级到 Node.js 22 LTS 与 Next.js 16.3.0，并将生产及开发依赖安全审计清零。
+- 扫描中心在输入 UNC 路径后明确提示共享访问前提：UNC 共享发现、目录浏览和扫描依赖当前 Windows 本地网络凭据，用户需要先在文件资源管理器、`net use` 或 Windows 凭据管理器中确保本机能打开共享；AD 保持只读，仅用于目录查询、SID 和组关系解析。
 - 公开示例现在统一使用 `example.com`、RFC 5737 文档地址和参数化扫描根目录；示例配置默认仅监听本机，且不再提供可直接使用的数据库口令或 JWT 密钥。
 - 新扫描现在绑定活动 AD 连接最新的已完成快照，优先从本地快照解析用户、组、嵌套成员和 Windows 特殊 SID，仅将快照未命中项交给实时 LDAP 补充。
 - 扫描完成摘要和报告中心现在显示 SID 解析来源与解析数量；历史会话会在读取时选择绑定快照，或按扫描前 SID 覆盖率推断最合适的已完成快照进行只读补全，不改写原始 ACL 证据。
@@ -34,12 +40,12 @@
 - Windows 桌面启动画面现在跟随已保存的 `zh-CN` 或 `en` 应用语言；Web 界面通过受限消息桥接把 locale 写入兼容数据目录，首次启动则按 Windows UI 文化选择中文或英文。
 - 桌面启动画面的最短可见时长由 1.8 秒调整为 750 毫秒，并在成功启动后使用 240 毫秒淡出；底部同时显示程序集版本，便于问题定位。
 - 公开仓库、规范开发路径、报告默认标题和所有用户可见产品文案统一使用 OpenAD；旧名称仅保留在经过说明的内部兼容层。
-- 将 `/health`、桌面 Web 启动标记、报告服务端默认值、启动动画和 Windows 防火墙/登录任务名称统一为 OpenAD；旧数据目录、可执行文件名和升级清理键仅保留为兼容层。
+- 将 `/health`、桌面 Web 启动标记、报告服务端默认值、启动动画和 Windows 防火墙/登录任务名称统一为 OpenAD；旧数据目录、环境变量和升级清理键仅保留为兼容层。
 - 首次公开基线排除本地代理状态、设计过程材料、审计截图和未复核历史文档，避免公开本机路径、身份或过时说明。
 - 将 `docs/README.md` 调整为文档索引，并指向顶层 `README.md`。
 - 用基于仓库实际状态的发布与验证说明替换 `docs/RELEASE_NOTES.md` 中不准确的表述。
 - 调整 Windows 发布包内容，使生成的桌面包包含顶层 `README.md`，不再使用文档索引占位文件。
-- 桌面包内说明改用 OpenAD 作为主产品名，并明确 `PermissionProtector.exe` 与旧数据目录仅为兼容名称。
+- 桌面包内说明和全部可执行文件统一使用 OpenAD，旧数据目录只用于首次升级迁移。
 - 在 `apps/web` 中持久化报告标题、组织名称、操作人、报告周期、权限映射和共享备注等默认值。
 - 将权限翻译映射同时接入导出载荷和页面分组报告行，保持预览与导出结果一致。
 - 项目治理、开发和维护文档改为中文在前、英文在后的双语格式。
@@ -51,6 +57,11 @@
 
 #### 修复
 
+- 修复首页快速连接 Active Directory 表单在宽屏下因字段说明行数不同而导致输入框、按钮上下错位，以及说明文字过小难以辨认的问题；字段现在统一从顶部对齐，中文提示保持可读行高。
+- 修复扫描中心把回车键当作开始扫描的问题；现在回车只负责探测并展开已输入路径，真正扫描必须点击“开始扫描”。首层 UNC 路径（如 `\\server` 或 `\\192.0.2.10`）会先发现共享，只有共享或子目录可被扫描。
+- 修复删除最后一个或由默认规则自动选中的 AD 连接后，首页与顶部状态仍沿用旧缓存显示“已连接/可以同步”的问题；删除当前连接会立即清空本地连接快照，服务端确认连接列表为空时也会自动纠正为未连接。
+- 修复删除已保存 AD 连接时因本地 API 跨域预检未允许 `DELETE` 而显示 `Failed to fetch` 的问题；删除失败时现在会提示本地 API 不可达，避免把网络错误误认为连接删除失败。
+- 修复 AD 账号输入格式不明确的问题；`EXAMPLE\\user` 表示 NetBIOS 域账号，`user@example.com` 表示 DNS/UPN，误填 `example.com\\user` 会自动转换为 UPN，新建连接和快速连接界面现在明确标注 Active Directory 与域控制器字段。
 - 修复大规模扫描完成后，风险发现集合写入 WebView `localStorage` 超出配额并把已成功扫描误报为失败的问题；风险发现、复核状态和备注现在持久化到 OpenAD 数据库，旧浏览器数据会在首次读取或扫描时自动迁移，风险同步失败也不会再覆盖扫描会话的 `completed` 状态。
 - 修复窗口化或较矮窗口中，长弹窗超出视口后无法上下滚动、顶部字段和底部操作不可达的问题；共享弹窗现在限制在动态视口高度内并支持纵向滚动，扫描中心的目录选择器也采用固定标题栏和独立滚动主体。
 - 修复从 AD 用户详情点击直属组时把组显示名误当成 DN、导致组成员查询返回 `group not found` 的问题；目录浏览现在使用用户结果中的完整 `group_dns` 展示、计数和打开直属组，并继续兼容旧接口中已是 DN 的 `groups` 值。
@@ -80,13 +91,20 @@
 - 补齐总览、目录同步、资源清单、文件活动、操作审计和报告会话的首次加载、空结果、可重试错误与 AD/Windows 审计前置条件状态；相关 AD 引导统一进入系统设置。
 - 让“紧凑表格”设置作用于所有工作区表格，并修复窄窗口下宽表滚动、表头吸顶、长路径/DN/SID 完整值提示和后端风险/扫描状态枚举未本地化的问题。
 
+- 扫描中心现在把裸 UNC 服务器根（例如 `\\server`）当成共享发现入口：回车和主按钮都会先枚举可访问共享，只有选中共享或子目录后才允许真正扫描。
+- 移除扫描中心的“使用已保存 AD 连接访问 UNC”选择，避免把 AD 账号误解为 SMB 共享访问凭据；OpenAD 现在只提示用户先准备本地 Windows 网络凭据，并且扫描发起不再携带 AD SMB 访问参数。
+
 ## English
 
-### Unreleased
+### 1.0.0 - 2026-08-06
 
 #### Added
 
 - Added group-member report export to AD group details. Excel is the default download, CSV remains available from the format menu, and the export follows the current direct-only or nested-member scope while including identity, SID, department, depth, and membership-path fields.
+- Added a per-user `win-x64` OpenAD installer build that produces a self-contained `OpenAD.exe`, a portable
+  ZIP, and matching SHA-256 checksums, with pre- and post-compilation audits for databases, logs, environment
+  files, keys, local paths, email addresses, environment identities, and private IP addresses. Release
+  artifacts do not carry the builder's configuration or application data, so first launch is blank.
 
 - Established OpenAD's open-core dual-license structure: the repository body excluding `ee/` is under
   AGPL-3.0, with new `LICENSING.md`, `NOTICE`, and a commercial license boundary under `ee/`.
@@ -104,6 +122,9 @@
 
 #### Changed
 
+- Standardized the formal release at `1.0.0`, with OpenAD filenames for the Windows installer, desktop host, Go services, CLI, portable package, and project files. Legacy names remain only in data migration, environment-variable, and internal namespace compatibility layers.
+- Upgraded the Web build chain to Node.js 22 LTS and Next.js 16.3.0, with zero reported production or development dependency vulnerabilities.
+- Scan Center now makes the UNC access prerequisite explicit: share discovery, directory browsing, and scanning rely on the current local Windows network credentials. Operators should first make sure Windows can open the share through File Explorer, `net use`, or Windows Credential Manager, while AD remains read-only for directory queries plus SID and group resolution.
 - Public examples now use `example.com`, RFC 5737 documentation addresses, and a parameterized scan root. Example configuration binds locally by default and no longer provides runnable database passwords or a JWT secret.
 - New scans now bind to the active AD connection's latest completed snapshot, resolving users, groups, nested memberships, and well-known Windows SIDs locally before sending only snapshot misses to live LDAP.
 - Scan completion and Report Center now surface SID-resolution sources and counts. Historical sessions are enriched read-only from their bound snapshot or the completed pre-scan snapshot with the best SID coverage, without rewriting stored ACL evidence.
@@ -113,12 +134,12 @@
 - The Windows startup experience now follows the saved `zh-CN` or `en` application locale. The Web UI sends the active locale through a constrained host bridge into the compatibility data directory, while first launch falls back to the Windows UI culture.
 - Reduced the startup minimum visibility from 1.8 seconds to 750 milliseconds, added a 240-millisecond success fade, and exposed the assembly version in the footer for diagnostics.
 - Unified the public repository, canonical development path, report default title, and all user-visible product copy under OpenAD; legacy names remain only in documented internal compatibility layers.
-- Unified `/health`, the desktop Web startup marker, server-side report defaults, startup animation, and Windows firewall/logon-task names under OpenAD; legacy data paths, executable names, and upgrade cleanup keys remain compatibility-only.
+- Unified `/health`, the desktop Web startup marker, server-side report defaults, startup animation, and Windows firewall/logon-task names under OpenAD; legacy data paths, environment variables, and upgrade cleanup keys remain compatibility-only.
 - Excluded local agent state, design-process material, audit screenshots, and unverified historical documents from the first public baseline to avoid publishing machine paths, identities, or stale guidance.
 - Reworked `docs/README.md` into a documentation index that points to the top-level `README.md`.
 - Replaced unsupported claims in `docs/RELEASE_NOTES.md` with repository-grounded release and verification notes.
 - Updated Windows packaging so generated desktop packages include the top-level `README.md` instead of a documentation-index placeholder.
-- Updated the packaged desktop notes to use OpenAD as the primary product name and identify `PermissionProtector.exe` and the legacy data directory as compatibility names only.
+- Updated the packaged desktop notes and every executable filename to use OpenAD; the legacy data directory is used only for one-time upgrade migration.
 - Persisted report defaults for title, organization, operator, report period, permission mappings, and sharing notes in `apps/web`.
 - Wired permission translation mappings into both export payloads and grouped on-page report rows so preview and export remain consistent.
 - Changed project governance, development, and maintenance documentation to a bilingual format with Chinese first and English second.
@@ -129,6 +150,12 @@
 
 #### Fixed
 
+- Fixed the Overview quick Active Directory connection form showing vertically misaligned inputs and unreadably small helper text on desktop widths. Fields now align from the top and retain readable line height for wrapped Chinese guidance.
+- Scan Center no longer treats Enter as a scan shortcut. Enter only probes and expands the typed path, while actual scans require clicking Start Scan. Bare UNC server roots such as `\\server` or `\\192.0.2.10` enumerate shares first, and only a share or subdirectory can be scanned.
+- Removed the Scan Center option to use saved AD connections for UNC access, avoiding the misleading impression that AD credentials are SMB share credentials. OpenAD now only prompts operators to prepare local Windows network credentials, and scan launches no longer carry AD SMB access parameters.
+- Fixed the Overview and shell continuing to show `Connected` and `Ready to sync` after deleting the last AD connection or a connection selected through the default fallback. Deleting the current profile now clears the local connection snapshot immediately, and an empty server-side profile list reconciles the state to disconnected.
+- Fixed stored AD connection deletion showing `Failed to fetch` because the local API CORS preflight did not allow `DELETE`; failed deletion now distinguishes an unreachable local API from an API error.
+- Clarified AD account formats: `EXAMPLE\\user` is a NetBIOS domain account, `user@example.com` is DNS/UPN, and the mistaken `example.com\\user` form is normalized to UPN. New and quick connection flows now explicitly identify Active Directory and the domain-controller field.
 - Fixed large completed scans exceeding the WebView `localStorage` quota while persisting risk findings and then being misreported as failed. Findings, review states, and notes now persist in the OpenAD database; legacy browser data migrates on the first load or scan, and a risk-sync failure can no longer overwrite a scan session's `completed` state.
 - Fixed long dialogs extending beyond windowed or short viewports with no usable vertical scrolling, which made top fields and bottom actions unreachable. Shared dialogs now stay within the dynamic viewport and scroll vertically, and Scan Center's directory browser now uses a fixed header with an independently scrollable body.
 - Fixed direct-group navigation from AD user details sending a group display name as the DN and returning `group not found`. Directory Explorer now uses complete `group_dns` values to render, count, and open direct groups, while retaining compatibility with legacy `groups` values that are already DNs.

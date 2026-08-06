@@ -1,7 +1,7 @@
 ﻿param(
     [string]$Configuration = 'Release',
     [string]$RuntimeIdentifier = 'win-x64',
-    [string]$Version = '0.1.0',
+    [string]$Version = '1.0.0',
     [switch]$SelfContained
 )
 
@@ -13,8 +13,8 @@ $distDir = Join-Path $rootDir 'dist'
 $releaseDir = Join-Path $distDir ("OpenAD-Windows-Desktop-v{0}" -f $Version)
 $goExe = Join-Path $rootDir 'tools\go\bin\go.exe'
 $npmCmd = Join-Path $rootDir 'tools\node\npm.cmd'
-$desktopProject = Join-Path $rootDir 'apps\desktop-win\PermissionProtector.Desktop.csproj'
-$desktopTestProject = Join-Path $rootDir 'apps\desktop-win.tests\PermissionProtector.Desktop.Tests.csproj'
+$desktopProject = Join-Path $rootDir 'apps\desktop-win\OpenAD.Desktop.csproj'
+$desktopTestProject = Join-Path $rootDir 'apps\desktop-win.tests\OpenAD.Desktop.Tests.csproj'
 
 function Invoke-Step([string]$Label, [scriptblock]$Action) {
     Write-Host "[INFO] $Label"
@@ -55,11 +55,12 @@ Invoke-Step 'Building Go backend services...' {
     try {
         & $goExe test ./...
         if ($LASTEXITCODE -ne 0) { throw 'go test failed' }
-        & $goExe build -o (Join-Path $releaseDir 'permission-protector-server.exe') .\cmd\api
+        $goBuildArgs = @('-trimpath', '-buildvcs=false', '-ldflags', '-s -w')
+        & $goExe build @goBuildArgs -o (Join-Path $releaseDir 'OpenAD.Server.exe') .\cmd\api
         if ($LASTEXITCODE -ne 0) { throw 'go api build failed' }
-        & $goExe build -o (Join-Path $releaseDir 'permission-protector-cli.exe') .\cmd\cli
+        & $goExe build @goBuildArgs -o (Join-Path $releaseDir 'OpenAD.CLI.exe') .\cmd\cli
         if ($LASTEXITCODE -ne 0) { throw 'go cli build failed' }
-        & $goExe build -o (Join-Path $releaseDir 'permission-protector-web.exe') .\cmd\webserver
+        & $goExe build @goBuildArgs -o (Join-Path $releaseDir 'OpenAD.Web.exe') .\cmd\webserver
         if ($LASTEXITCODE -ne 0) { throw 'go webserver build failed' }
     }
     finally {
@@ -98,14 +99,19 @@ Invoke-Step 'Publishing Windows desktop shell...' {
         '-r', $RuntimeIdentifier,
         '-o', $releaseDir,
         '--self-contained', ($(if ($SelfContained) { 'true' } else { 'false' })),
-        '/p:RestoreIgnoreFailedSources=true'
+        '/p:RestoreIgnoreFailedSources=true',
+        '/p:ContinuousIntegrationBuild=true',
+        '/p:DebugSymbols=false',
+        '/p:DebugType=None',
+        '/p:Deterministic=true',
+        "/p:Version=$Version"
     )
     & dotnet @publishArgs
     if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 }
 
 Invoke-Step 'Copying fallback launch scripts and desktop notes...' {
-    foreach ($file in @('start-windows.bat', 'stop-windows.bat', 'verify-install.bat')) {
+    foreach ($file in @('start-windows.bat', 'stop-windows.bat', 'verify-install.bat', 'start-background.bat', 'start-background.ps1', 'backup-data.bat')) {
         $source = Join-Path $rootDir "scripts\$file"
         if (Test-Path -LiteralPath $source -PathType Leaf) {
             Copy-Item -LiteralPath $source -Destination $releaseDir -Force
@@ -122,7 +128,26 @@ Invoke-Step 'Copying fallback launch scripts and desktop notes...' {
         'Data from an earlier %APPDATA%\PermissionProtector installation is migrated automatically on first start.',
         'Fallback browser launcher: start-windows.bat'
     )
-    Set-Content -LiteralPath (Join-Path $releaseDir 'README_DESKTOP.txt') -Value $readme -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $releaseDir 'OpenAD-README.txt') -Value $readme -Encoding UTF8
+
+    foreach ($file in @('LICENSE', 'LICENSING.md', 'NOTICE')) {
+        $source = Join-Path $rootDir $file
+        if (Test-Path -LiteralPath $source -PathType Leaf) {
+            Copy-Item -LiteralPath $source -Destination $releaseDir -Force
+        }
+    }
+
+    foreach ($file in @('docs\INSTALL_WINDOWS.md', 'docs\RELEASE_MANIFEST.md')) {
+        $source = Join-Path $rootDir $file
+        if (Test-Path -LiteralPath $source -PathType Leaf) {
+            Copy-Item -LiteralPath $source -Destination $releaseDir -Force
+        }
+    }
+}
+
+$debugArtifacts = @(Get-ChildItem -LiteralPath $releaseDir -Filter '*.pdb' -File -Recurse)
+if ($debugArtifacts.Count -gt 0) {
+    throw "Desktop package contains debug symbols: $($debugArtifacts.FullName -join ', ')"
 }
 
 Write-Host '[OK] Desktop package created:'

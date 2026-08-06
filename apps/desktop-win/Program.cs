@@ -32,7 +32,7 @@ internal static class Program
         }
         catch (Exception exception)
         {
-            File.WriteAllText(Path.Combine(Path.GetTempPath(), "permission-protector-desktop-smoke.err.log"), exception.ToString());
+            File.WriteAllText(Path.Combine(Path.GetTempPath(), "OpenAD.Desktop.Smoke.err.log"), exception.ToString());
             return 1;
         }
     }

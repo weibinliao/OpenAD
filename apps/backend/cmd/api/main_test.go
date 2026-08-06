@@ -135,14 +135,16 @@ func TestCorsMiddlewareHandlesPreflightRequests(t *testing.T) {
 	t.Setenv("ALLOW_ORIGINS", "")
 	router := newTestRouter(applicationDependencies{})
 
-	request := httptest.NewRequest(http.MethodOptions, "/api/scan", nil)
+	request := httptest.NewRequest(http.MethodOptions, "/api/ad/connections/00000000-0000-0000-0000-000000000001", nil)
 	request.Header.Set("Origin", "http://127.0.0.1:43110")
+	request.Header.Set("Access-Control-Request-Method", http.MethodDelete)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 
 	assert.Equal(t, http.StatusNoContent, recorder.Code)
 	assert.Equal(t, "http://127.0.0.1:43110", recorder.Header().Get("Access-Control-Allow-Origin"))
 	assert.Equal(t, "Origin", recorder.Header().Get("Vary"))
+	assert.Contains(t, recorder.Header().Get("Access-Control-Allow-Methods"), http.MethodDelete)
 }
 
 func TestCorsDefaultDoesNotAllowExternalOrigins(t *testing.T) {
@@ -1338,6 +1340,36 @@ func TestListDirectoriesEndpointReturnsChildren(t *testing.T) {
 	assert.Contains(t, body, `"name":"A"`)
 	assert.Contains(t, body, `"name":"B"`)
 	assert.False(t, strings.Contains(body, "file.txt"))
+}
+
+func TestListDirectoriesEndpointDiscoversUNCServerShares(t *testing.T) {
+	originalLister := listUNCServerShares
+	listUNCServerShares = func(serverRoot string) ([]gin.H, error) {
+		require.Contains(t, []string{`\\server`, `\\192.0.2.10`}, serverRoot)
+		return []gin.H{
+			{"name": "IT_dept", "path": serverRoot + `\IT_dept`},
+			{"name": "software", "path": serverRoot + `\software`},
+		}, nil
+	}
+	t.Cleanup(func() {
+		listUNCServerShares = originalLister
+	})
+
+	for _, serverRoot := range []string{`\\server`, `\\192.0.2.10`} {
+		t.Run(serverRoot, func(t *testing.T) {
+			router := newTestRouter(applicationDependencies{})
+			target := "/api/fs/directories?path=" + url.QueryEscape(serverRoot)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, target, nil)
+			router.ServeHTTP(recorder, request)
+
+			assert.Equal(t, http.StatusOK, recorder.Code)
+			body := recorder.Body.String()
+			assert.Contains(t, body, `"name":"IT_dept"`)
+			assert.Contains(t, body, `"name":"software"`)
+			assert.Contains(t, body, `"path":"`+strings.ReplaceAll(serverRoot+`\software`, `\`, `\\`)+`"`)
+		})
+	}
 }
 
 func TestADGroupEndpointsHandleSuccessAndFailures(t *testing.T) {

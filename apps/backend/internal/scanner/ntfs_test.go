@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/weibinliao/OpenAD/internal/testutil/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weibinliao/OpenAD/internal/testutil/mocks"
 )
 
 func TestScanDirectoryTraversesTreeAndFiltersInheritedPermissions(t *testing.T) {
@@ -105,7 +105,7 @@ func TestScanDirectoryAnnotatesPermissionDeniedUNCPaths(t *testing.T) {
 	assert.Nil(t, result)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "access denied")
-	assert.Contains(t, err.Error(), "UNC scanning uses the backend process identity")
+	assert.Contains(t, err.Error(), "UNC scanning uses the selected UNC access identity")
 }
 
 func TestScanDirectoryRespectsCancellation(t *testing.T) {

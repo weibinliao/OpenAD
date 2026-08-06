@@ -440,7 +440,7 @@ func handleUpdateNetworkAdmission(controller *networkAdmissionController) gin.Ha
 func corsMiddleware() gin.HandlerFunc {
 	allowedOrigins := parseAllowedOrigins(os.Getenv("ALLOW_ORIGINS"))
 	allowWildcard := len(allowedOrigins) == 1 && allowedOrigins[0] == "*"
-	allowMethods := "GET, POST, PUT, OPTIONS"
+	allowMethods := "GET, POST, PUT, DELETE, OPTIONS"
 	allowHeaders := "Content-Type, X-Request-ID"
 
 	return func(context *gin.Context) {

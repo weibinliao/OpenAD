@@ -8,7 +8,6 @@ const nextConfig = {
         ? '.next-dev'
         : '.next',
   reactStrictMode: true,
-  swcMinify: true,
 }
 
 module.exports = nextConfig

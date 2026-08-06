@@ -15,7 +15,7 @@ services:
         target: C:\host
         read_only: true
     environment:
-      - DATABASE_URL=sqlite:///app/data/permission-protector.db
+      - DATABASE_URL=sqlite:///app/data/OpenAD.db
     restart: unless-stopped
 
   # Alternative Linux-based service for cross-platform
@@ -29,6 +29,6 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      - DATABASE_URL=sqlite:///app/data/permission-protector.db
+      - DATABASE_URL=sqlite:///app/data/OpenAD.db
     restart: unless-stopped
     profiles: ["linux"]

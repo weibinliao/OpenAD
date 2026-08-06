@@ -84,6 +84,29 @@ func (application *application) handleListDirectories(context *gin.Context) {
 		return
 	}
 
+	if isUNCServerRootPath(requestPath) {
+		items, err := listUNCServerShares(requestPath)
+		if err != nil {
+			if err == errUNCServerShareDiscoveryUnsupported {
+				context.JSON(http.StatusNotImplemented, gin.H{"error": err.Error()})
+				return
+			}
+			if isPermissionDeniedError(err) {
+				context.JSON(http.StatusForbidden, gin.H{"error": formatDirectoryAccessDeniedMessage(requestPath, err)})
+				return
+			}
+			context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		context.JSON(http.StatusOK, gin.H{
+			"path":   requestPath,
+			"items":  items,
+			"parent": "",
+		})
+		return
+	}
+
 	info, err := os.Stat(requestPath)
 	if err != nil {
 		if isPermissionDeniedError(err) {
@@ -202,7 +225,7 @@ func handleRuntimeIdentity(context *gin.Context) {
 		"preferred_host":       preferredHost,
 		"local_ipv4_addresses": localIPv4Addresses,
 		"goos":                 runtime.GOOS,
-		"note":                 "UNC browsing and scanning use this backend runtime identity; AD credentials are only used for directory expansion and principal resolution",
+		"note":                 "UNC browsing and scanning use the current Windows network session. OpenAD does not use saved AD connection credentials to open SMB shares; AD remains read-only for directory expansion and principal resolution.",
 	})
 }
 
@@ -273,7 +296,7 @@ func isPermissionDeniedError(err error) bool {
 func formatDirectoryAccessDeniedMessage(path string, err error) string {
 	message := fmt.Sprintf("access denied reading %s: %v", path, err)
 	if strings.HasPrefix(strings.TrimSpace(path), `\\`) {
-		return message + " (UNC browsing and scanning use the backend Windows identity; LDAP credentials are only applied to directory expansion)"
+		return message + " (UNC browsing, share discovery, and scanning use the current Windows network session. Open the share in File Explorer or connect it with net use first, then retry.)"
 	}
 
 	return message

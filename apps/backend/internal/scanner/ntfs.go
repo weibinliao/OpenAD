@@ -287,7 +287,7 @@ func wrapScanPathError(operation, path string, err error) error {
 
 	if isPathAccessDenied(err) {
 		if isUNCPath(path) {
-			return fmt.Errorf("%s %s: access denied (%w; UNC scanning uses the backend process identity, not AD credentials)", operation, path, err)
+			return fmt.Errorf("%s %s: access denied (%w; UNC scanning uses the selected UNC access identity)", operation, path, err)
 		}
 		return fmt.Errorf("%s %s: access denied (%w)", operation, path, err)
 	}

@@ -135,6 +135,25 @@ func TestScanEndpointRejectsWhenScanCapacityIsFull(t *testing.T) {
 	assert.Zero(t, directoryService.permissionExpanderCalls)
 }
 
+func TestScanEndpointRejectsUNCServerRoot(t *testing.T) {
+	var runCalls atomic.Int32
+	router := newTestRouter(applicationDependencies{
+		scans: &stubScanRunner{runFunc: func(request scanservice.Request) (*scanservice.Response, error) {
+			runCalls.Add(1)
+			return nil, nil
+		}},
+	})
+
+	recorder := performJSONRequestToRouter(t, router, "/api/scan", ScanRequest{
+		Path:   `\\server`,
+		ScanID: "server-root-scan",
+	})
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "UNC share or subdirectory")
+	assert.Zero(t, runCalls.Load())
+}
+
 func TestScanEndpointKeepsIDReservedAfterClientDisconnectUntilRunExits(t *testing.T) {
 	registry := newScanCancelRegistry()
 	started := make(chan struct{})

@@ -48,13 +48,13 @@ function New-DetachedProcess([string]$CommandLine, [string]$WorkingDirectory) {
 }
 
 $resolvedProjectRoot = (Resolve-Path -LiteralPath $ProjectRoot).Path
-$serverExe = Join-Path $resolvedProjectRoot 'permission-protector-server.exe'
-$webServerExe = Join-Path $resolvedProjectRoot 'permission-protector-web.exe'
+$serverExe = Join-Path $resolvedProjectRoot 'OpenAD.Server.exe'
+$webServerExe = Join-Path $resolvedProjectRoot 'OpenAD.Web.exe'
 $webRoot = Join-Path $resolvedProjectRoot 'web'
 $webIndex = Join-Path $webRoot 'index.html'
 
-Assert-File $serverExe 'OpenAD API service (permission-protector-server.exe)'
-Assert-File $webServerExe 'OpenAD web service (permission-protector-web.exe)'
+Assert-File $serverExe 'OpenAD API service (OpenAD.Server.exe)'
+Assert-File $webServerExe 'OpenAD web service (OpenAD.Web.exe)'
 Assert-Directory $webRoot 'Web directory'
 Assert-File $webIndex 'Web index.html'
 

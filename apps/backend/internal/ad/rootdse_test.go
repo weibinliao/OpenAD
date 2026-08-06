@@ -27,6 +27,7 @@ func TestNormalizeBindUser(t *testing.T) {
 		normalized   bool
 	}{
 		{"alice", "example.com", "alice@example.com", true},
+		{"example.com\\alice", "", "alice@example.com", true},
 		{"EXAMPLE\\alice", "example.com", "EXAMPLE\\alice", false},
 		{"alice@example.com", "example.com", "alice@example.com", false},
 		{"alice", "", "alice", false},

@@ -71,7 +71,7 @@ describe('ScanWizard', () => {
     global.fetch = jest.fn(() => Promise.resolve({
       ok: true,
       json: async () => ({ path: 'C:\\', parent: '', items: [] }),
-    } as Response)) as jest.MockedFunction<typeof fetch>;
+    } as Response)) as unknown as jest.MockedFunction<typeof fetch>;
     renderWizard();
 
     fireEvent.click(screen.getByText('Folder Permissions'));

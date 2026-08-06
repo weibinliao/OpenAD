@@ -49,25 +49,25 @@ public sealed class StartupExperienceTests
     public void ExplainsAnIncompleteDesktopPackageWithoutExposingTheRawEnglishRuntimeError()
     {
         var state = StartupExperienceState.FromRuntimeMessage(
-            "Startup failed: Desktop package is incomplete. Put PermissionProtector.exe beside permission-protector-server.exe, permission-protector-web.exe, and web\\index.html.",
+            "Startup failed: Desktop package is incomplete. Put OpenAD.exe beside OpenAD.Server.exe, OpenAD.Web.exe, and web\\index.html.",
             StartupExperienceLocale.SimplifiedChinese);
 
         Assert.Equal("桌面组件不完整", state.Headline);
         Assert.Contains("完整发布目录", state.Detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("PermissionProtector.exe", state.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenAD.Server.exe", state.Detail, StringComparison.Ordinal);
     }
 
     [Fact]
     public void ExplainsAnIncompleteDesktopPackageInEnglishWithoutExposingInternalFileNames()
     {
         var state = StartupExperienceState.FromRuntimeMessage(
-            "Startup failed: Desktop package is incomplete. Put PermissionProtector.exe beside permission-protector-server.exe, permission-protector-web.exe, and web\\index.html.",
+            "Startup failed: Desktop package is incomplete. Put OpenAD.exe beside OpenAD.Server.exe, OpenAD.Web.exe, and web\\index.html.",
             StartupExperienceLocale.English);
 
         Assert.Equal("Desktop components are incomplete", state.Headline);
         Assert.Contains("complete release folder", state.Detail, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("PermissionProtector.exe", state.Detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("permission-protector-server.exe", state.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenAD.Server.exe", state.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenAD.Web.exe", state.Detail, StringComparison.Ordinal);
     }
 
     [Theory]

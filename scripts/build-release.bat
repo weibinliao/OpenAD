@@ -1,12 +1,12 @@
 @echo off
 REM OpenAD - Windows Release Build Script
-REM Version: 0.1.0
+REM Version: 1.0.0
 
 setlocal
 set "ROOT_DIR=%~dp0.."
 set "GO_EXE=%ROOT_DIR%\tools\go\bin\go.exe"
 set "NPM_CMD=%ROOT_DIR%\tools\node\npm.cmd"
-set "RELEASE_VERSION=0.1.0"
+set "RELEASE_VERSION=1.0.0"
 set "RELEASE_DIR=%ROOT_DIR%\dist\OpenAD-Windows-v%RELEASE_VERSION%"
 
 if not exist "%GO_EXE%" (
@@ -32,11 +32,11 @@ pushd "%ROOT_DIR%\apps\backend"
 if errorlevel 1 exit /b 1
 "%GO_EXE%" test .\...
 if errorlevel 1 exit /b 1
-"%GO_EXE%" build -o "%ROOT_DIR%\dist\permission-protector-server.exe" .\cmd\api
+"%GO_EXE%" build -o "%ROOT_DIR%\dist\OpenAD.Server.exe" .\cmd\api
 if errorlevel 1 exit /b 1
-"%GO_EXE%" build -o "%ROOT_DIR%\dist\permission-protector-cli.exe" .\cmd\cli
+"%GO_EXE%" build -o "%ROOT_DIR%\dist\OpenAD.CLI.exe" .\cmd\cli
 if errorlevel 1 exit /b 1
-"%GO_EXE%" build -o "%ROOT_DIR%\dist\permission-protector-web.exe" .\cmd\webserver
+"%GO_EXE%" build -o "%ROOT_DIR%\dist\OpenAD.Web.exe" .\cmd\webserver
 if errorlevel 1 exit /b 1
 popd
 
@@ -61,7 +61,7 @@ mkdir "%RELEASE_DIR%\scripts"
 if errorlevel 1 exit /b 1
 
 REM Copy binaries
-copy "%ROOT_DIR%\dist\permission-protector-*.exe" "%RELEASE_DIR%\"
+copy "%ROOT_DIR%\dist\OpenAD.*.exe" "%RELEASE_DIR%\"
 if errorlevel 1 exit /b 1
 xcopy /E /I /Y "%ROOT_DIR%\dist\web" "%RELEASE_DIR%\web"
 if errorlevel 1 exit /b 1

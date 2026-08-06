@@ -33,7 +33,7 @@
 - PowerShell 5.1 或更高版本
 - .NET 10 SDK
 - WebView2 Runtime
-- 系统安装的 Node.js、Go，或项目 `tools/` 下的便携工具链
+- Node.js 22 LTS、Go，或项目 `tools/` 下的便携工具链
 
 项目提供便携工具链准备脚本：
 
@@ -70,8 +70,8 @@ Invoke-RestMethod http://127.0.0.1:18080/health
 `FSA_MAX_CONCURRENT_SCANS`，主变量存在时优先。达到上限的扫描请求会立即返回 HTTP 409，不会在
 后台无限排队。调整该值会增加磁盘和数据库争用，需在重启 API 后生效并结合实际目录负载验证。
 
-本地应用数据为了兼容保存在 `%APPDATA%\PermissionProtector`。禁止把真实凭据或目录
-导出数据提交到 Git。
+本地应用数据保存在 `%APPDATA%\OpenAD`；首次升级会迁移旧 `%APPDATA%\PermissionProtector`
+目录。禁止把真实凭据或目录导出数据提交到 Git。
 
 ## Web 界面开发
 
@@ -91,8 +91,8 @@ Invoke-RestMethod http://127.0.0.1:18080/health
 快速检查：
 
 ```powershell
-dotnet test .\apps\desktop-win.tests\PermissionProtector.Desktop.Tests.csproj -c Release
-dotnet build .\apps\desktop-win\PermissionProtector.Desktop.csproj -c Release
+dotnet test .\apps\desktop-win.tests\OpenAD.Desktop.Tests.csproj -c Release
+dotnet build .\apps\desktop-win\OpenAD.Desktop.csproj -c Release
 ```
 
 完整桌面包：
@@ -101,8 +101,22 @@ dotnet build .\apps\desktop-win\PermissionProtector.Desktop.csproj -c Release
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-desktop-windows.ps1
 ```
 
-输出目录为 `dist/OpenAD-Windows-Desktop-v<version>`。可执行文件暂时保留
-`PermissionProtector.exe` 兼容名称，但用户看到的产品必须是 OpenAD。
+输出目录为 `dist/OpenAD-Windows-Desktop-v<version>`。安装包和包内可执行文件统一使用
+OpenAD 产品名；旧数据路径仅作为升级兼容入口保留。
+
+构建供最终用户安装的 `win-x64` 安装程序：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 -Version 1.0.0
+```
+
+输出为 `dist/OpenAD.exe` 及 `dist/OpenAD.exe.sha256`。版本号保存在安装器元数据中，构建会发布
+自包含 .NET 运行时的桌面包、校验并准备 Inno Setup、审计解压目录和最终安装器中的数据库、
+日志、环境文件、密钥、本机路径、邮箱、环境域名及内网地址，然后才生成校验和。安装程序按
+当前用户安装到 `%LOCALAPPDATA%\Programs\OpenAD`，不需要管理员权限；它不打包也不删除
+`%APPDATA%\OpenAD` 或兼容数据目录，因此新电脑首次启动为空白，升级和卸载则保留已有数据。
+目标电脑仍需安装 Microsoft Edge WebView2 Runtime。当前安装程序未做代码签名，Windows
+SmartScreen 可能显示“未知发布者”。
 
 ## 验证等级
 
@@ -182,7 +196,7 @@ The shipping desktop app starts the API on port `18080` and packaged Web content
 - PowerShell 5.1 or later
 - .NET 10 SDK
 - WebView2 Runtime
-- System Node.js and Go, or the portable toolchains under `tools/`
+- Node.js 22 LTS and Go, or the portable toolchains under `tools/`
 
 Prepare the portable toolchains with:
 
@@ -221,7 +235,7 @@ while the primary variable takes precedence when both are present. Requests abov
 HTTP 409 immediately instead of waiting in an unbounded queue. Higher values increase disk and database
 contention and take effect after the API restarts, so validate them against representative directories.
 
-For compatibility, local application data remains under `%APPDATA%\PermissionProtector`. Never commit real credentials or directory exports.
+Local application data is stored under `%APPDATA%\OpenAD`; first launch migrates an existing `%APPDATA%\PermissionProtector` directory. Never commit real credentials or directory exports.
 
 ### Web Development
 
@@ -241,8 +255,8 @@ To enable browser mode explicitly on a trusted administration network, run `scri
 Fast checks:
 
 ```powershell
-dotnet test .\apps\desktop-win.tests\PermissionProtector.Desktop.Tests.csproj -c Release
-dotnet build .\apps\desktop-win\PermissionProtector.Desktop.csproj -c Release
+dotnet test .\apps\desktop-win.tests\OpenAD.Desktop.Tests.csproj -c Release
+dotnet build .\apps\desktop-win\OpenAD.Desktop.csproj -c Release
 ```
 
 Build the complete package with:
@@ -251,7 +265,24 @@ Build the complete package with:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-desktop-windows.ps1
 ```
 
-Output is written to `dist/OpenAD-Windows-Desktop-v<version>`. The executable temporarily keeps the compatibility name `PermissionProtector.exe`, while all user-visible branding must use OpenAD.
+Output is written to `dist/OpenAD-Windows-Desktop-v<version>`. The installer and bundled executables use OpenAD filenames; legacy data paths remain only for migration compatibility.
+
+Build the installable `win-x64` setup program with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 -Version 1.0.0
+```
+
+This creates `dist/OpenAD.exe` and `dist/OpenAD.exe.sha256`. The version is retained in the installer
+metadata. The build
+publishes a self-contained .NET desktop payload, prepares a checksum-verified Inno Setup toolchain,
+and audits both the unpacked payload and final installer for databases, logs, environment files, keys,
+local paths, email addresses, environment identities, and private IP addresses before writing the
+checksum. Setup installs per user under `%LOCALAPPDATA%\Programs\OpenAD` without elevation. It neither
+packages nor deletes `%APPDATA%\OpenAD` or the compatibility data directory, so a first install on a
+new machine starts blank while upgrades and uninstall preserve existing data. Microsoft Edge WebView2
+Runtime remains required on the target computer. The installer is currently unsigned, so Windows
+SmartScreen may show an unknown-publisher warning.
 
 ### Verification Levels
 

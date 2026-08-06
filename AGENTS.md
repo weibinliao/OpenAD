@@ -38,8 +38,8 @@
 ## 产品身份
 
 - 用户看到的产品名称是 **OpenAD**。
-- `PermissionProtector` 暂时保留在部分可执行文件名、命名空间、安装包目录和数据目录中，
-  仅用于兼容。界面中不能再把它当作主产品名称。
+- `PermissionProtector` 仅保留在 .NET 命名空间、兼容环境变量、旧数据迁移路径和必要协议标识中。
+  发布文件、安装目录和界面必须统一使用 OpenAD。
 - OpenAD 是面向 Windows 的开源化桌面产品，覆盖 Active Directory 身份、NTFS 权限、
   有效访问分析、风险检查和报告输出。
 - 当前版本对 AD 保持只读。未来如需写操作，必须有明确需求、权限边界和安全评审。
@@ -107,8 +107,8 @@
 & .\tools\node\npm.cmd --prefix .\apps\web run build:static
 
 # 桌面端
-dotnet test .\apps\desktop-win.tests\PermissionProtector.Desktop.Tests.csproj -c Release
-dotnet build .\apps\desktop-win\PermissionProtector.Desktop.csproj -c Release
+dotnet test .\apps\desktop-win.tests\OpenAD.Desktop.Tests.csproj -c Release
+dotnet build .\apps\desktop-win\OpenAD.Desktop.csproj -c Release
 
 # 完整 Windows 桌面包
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-desktop-windows.ps1

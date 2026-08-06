@@ -7,7 +7,7 @@
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | 扫描本地 NTFS 目录权限 | 已支持 | Windows 构建中的 Go 扫描器已实现。 |
-| 扫描 UNC 或共享路径 | 有条件支持 | 界面和扫描流程支持 UNC；AD 增强依赖已验证的 AD 连接。 |
+| 扫描 UNC 或共享路径 | 有条件支持 | UNC 目录访问使用 OpenAD 后端的 Windows 运行身份；已验证的 AD 连接只增强 SID、用户、组和嵌套成员解析，不会授予共享访问权限。 |
 | 包含继承权限 | 已支持 | 扫描请求和界面默认值中均已提供。 |
 | 权限风险提示 | 已支持 | 扫描器记录 `risk_level` 和相关权限元数据。 |
 | 权限暴露规则引擎 | 已支持 | 前端把 ACL 记录转换为包含类别、影响、证据和整改建议的评分风险。 |
@@ -49,7 +49,7 @@ This matrix is based only on implementation present in the current repository, n
 | Capability | Status | Notes |
 | --- | --- | --- |
 | Scan local NTFS directory permissions | Supported | Implemented by the Go scanner in Windows builds. |
-| Scan UNC or shared paths | Conditional | The UI and scan flow support UNC paths; AD enrichment requires a verified AD connection. |
+| Scan UNC or shared paths | Conditional | UNC directory access uses the Windows identity running the OpenAD backend. A verified AD connection enriches SID, user, group, and nested-membership resolution but does not grant share access. |
 | Include inherited permissions | Supported | Available in both scan requests and UI defaults. |
 | Permission risk hints | Supported | The scanner records `risk_level` and related permission metadata. |
 | Permission exposure rule engine | Supported | The frontend converts ACL evidence into scored findings with category, impact, evidence, and remediation guidance. |

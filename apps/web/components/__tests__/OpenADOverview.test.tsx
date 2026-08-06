@@ -169,11 +169,11 @@ describe('OpenAD operations overview', () => {
     mockADConnected = false;
     const { rerender } = render(<OpenADOverview />);
 
-    expect(await screen.findByText('连接你的域')).toBeInTheDocument();
+    expect(await screen.findByText('连接 Active Directory')).toBeInTheDocument();
 
     mockADConnected = true;
     rerender(<OpenADOverview />);
-    expect(screen.queryByText('连接你的域')).not.toBeInTheDocument();
+    expect(screen.queryByText('连接 Active Directory')).not.toBeInTheDocument();
   });
 
   it('includes latest permission count and completion time in environment status', async () => {

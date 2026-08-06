@@ -8,10 +8,10 @@ REM Get script directory
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%.") do set "SCRIPT_HOME=%%~fI"
 set "PROJECT_ROOT=%SCRIPT_HOME%"
-if not exist "%PROJECT_ROOT%\permission-protector-server.exe" set "PROJECT_ROOT=%SCRIPT_HOME%\.."
+if not exist "%PROJECT_ROOT%\OpenAD.Server.exe" set "PROJECT_ROOT=%SCRIPT_HOME%\.."
 for %%I in ("%PROJECT_ROOT%") do set "PROJECT_ROOT=%%~fI"
-set "WEB_SERVER_EXE=%PROJECT_ROOT%\permission-protector-web.exe"
-set "STATIC_SERVER_PID_FILE=%TEMP%\permission-protector-static-server.pid"
+set "WEB_SERVER_EXE=%PROJECT_ROOT%\OpenAD.Web.exe"
+set "STATIC_SERVER_PID_FILE=%TEMP%\OpenAD-static-server.pid"
 if "%API_HOST%"=="" set "API_HOST=127.0.0.1"
 if "%API_PORT%"=="" set "API_PORT=18080"
 if "%PORT%"=="" set "PORT=%API_PORT%"
@@ -32,14 +32,14 @@ if "%LAN_WEB_BIND%"=="1" set "LAN_BIND=1"
 if "%LAN_WEB_BIND%"=="1" if /I "%PUBLIC_HOST%"=="localhost" (
     for /f "usebackq delims=" %%H in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$primary = Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.IPv4DefaultGateway -and $_.IPv4Address } | Sort-Object InterfaceMetric | Select-Object -First 1; if ($primary) { $primary.IPv4Address[0].IPAddress } else { $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.254*' -and $_.PrefixOrigin -ne 'WellKnown' } | Sort-Object InterfaceMetric | Select-Object -First 1 -ExpandProperty IPAddress; if ($ip) { $ip } else { 'localhost' } }"`) do set "PUBLIC_HOST=%%H"
 )
-if "%PERMISSION_PROTECTOR_DATA_DIR%"=="" set "PERMISSION_PROTECTOR_DATA_DIR=%APPDATA%\PermissionProtector"
+if "%PERMISSION_PROTECTOR_DATA_DIR%"=="" set "PERMISSION_PROTECTOR_DATA_DIR=%APPDATA%\OpenAD"
 if not exist "%PERMISSION_PROTECTOR_DATA_DIR%" mkdir "%PERMISSION_PROTECTOR_DATA_DIR%"
-if "%DATABASE_URL%"=="" set "DATABASE_URL=sqlite:///%PERMISSION_PROTECTOR_DATA_DIR%\permission-protector.db"
+if "%DATABASE_URL%"=="" set "DATABASE_URL=sqlite:///%PERMISSION_PROTECTOR_DATA_DIR%\OpenAD.db"
 
 REM Check if binaries exist
-if not exist "%PROJECT_ROOT%\permission-protector-server.exe" (
-    echo [ERROR] OpenAD API service (permission-protector-server.exe) not found
-    echo Expected OpenAD API service location: %PROJECT_ROOT%\permission-protector-server.exe
+if not exist "%PROJECT_ROOT%\OpenAD.Server.exe" (
+    echo [ERROR] OpenAD API service (OpenAD.Server.exe) not found
+    echo Expected OpenAD API service location: %PROJECT_ROOT%\OpenAD.Server.exe
     echo.
     echo Please ensure you have:
     echo 1. Pre-compiled binaries in project root, OR
@@ -52,7 +52,7 @@ if not exist "%PROJECT_ROOT%\permission-protector-server.exe" (
 REM Start backend server
 echo [INFO] Starting backend server...
 pushd "%PROJECT_ROOT%"
-start /B permission-protector-server.exe
+start /B OpenAD.Server.exe
 popd
 
 REM Wait for server
@@ -99,8 +99,8 @@ echo Press any key to stop...
 pause >nul
 
 REM Cleanup
-taskkill /F /IM permission-protector-server.exe 2>nul
-taskkill /F /IM permission-protector-web.exe 2>nul
+taskkill /F /IM OpenAD.Server.exe 2>nul
+taskkill /F /IM OpenAD.Web.exe 2>nul
 if exist "%STATIC_SERVER_PID_FILE%" (
     set /p STATIC_SERVER_PID=<"%STATIC_SERVER_PID_FILE%"
     if defined STATIC_SERVER_PID taskkill /F /PID !STATIC_SERVER_PID! >nul 2>nul

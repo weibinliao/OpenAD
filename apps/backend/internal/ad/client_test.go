@@ -141,6 +141,16 @@ func TestNewADClientReturnsBindError(t *testing.T) {
 	assert.Contains(t, err.Error(), "Invalid Credentials")
 }
 
+func TestNewADClientNormalizesDNSDomainBackslashAccount(t *testing.T) {
+	server := newLDAPTestServer(t, ldapTestServerOptions{})
+
+	client, err := NewADClient(server.URL(), "DC=example,DC=com", "example.com\\alice", "secret")
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	assert.Equal(t, []string{"alice@example.com"}, server.BindUsernames())
+}
+
 func TestClientConnectAndClose(t *testing.T) {
 	server := newLDAPTestServer(t, ldapTestServerOptions{})
 	client := NewClient(server.URL(), "DC=example,DC=com", "svc-reader", "secret")

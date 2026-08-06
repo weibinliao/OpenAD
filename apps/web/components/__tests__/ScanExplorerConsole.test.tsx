@@ -14,24 +14,29 @@ jest.mock('next/router', () => ({
 const mockRouterPush = jest.fn();
 const mockOnPathChange = jest.fn();
 const mockOnScan = jest.fn();
-const mockOnOpenTemplates = jest.fn();
+const mockOnDepthChange = jest.fn();
+const mockOnIncludeInheritedChange = jest.fn();
+let mockProfiles: Array<Record<string, unknown>> = [];
 
-function createFetchResponse(payload: unknown) {
+function createFetchResponse(payload: unknown, ok = true, status = ok ? 200 : 500) {
   return {
-    ok: true,
+    ok,
+    status,
     json: async () => payload,
   } as Response;
 }
 
-function renderConsole(path = '') {
+function renderConsole(path = '', options: { adReady?: boolean } = {}) {
   return render(
     <I18nProvider>
       <ADConnectionProvider>
         <ScanExplorerConsole
           locale="en"
           path={path}
+          depth={2}
+          includeInherited={true}
           loading={false}
-          adReady={false}
+          adReady={options.adReady ?? false}
           itemsScanned={0}
           permissionCount={0}
           resultCount={0}
@@ -46,8 +51,9 @@ function renderConsole(path = '') {
           message=""
           error=""
           onPathChange={mockOnPathChange}
+          onDepthChange={mockOnDepthChange}
+          onIncludeInheritedChange={mockOnIncludeInheritedChange}
           onScan={mockOnScan}
-          onOpenTemplates={mockOnOpenTemplates}
         />
       </ADConnectionProvider>
     </I18nProvider>
@@ -60,17 +66,57 @@ describe('ScanExplorerConsole', () => {
   beforeEach(() => {
     mockOnPathChange.mockClear();
     mockOnScan.mockClear();
-    mockOnOpenTemplates.mockClear();
+    mockOnDepthChange.mockClear();
+    mockOnIncludeInheritedChange.mockClear();
     mockRouterPush.mockClear();
+    mockProfiles = [];
+    window.localStorage.clear();
 
     global.fetch = jest.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes('/api/fs/directories?path=')) {
+      if (url.includes('/api/ad/connections')) {
+        return Promise.resolve(
+          createFetchResponse({
+            items: mockProfiles,
+            count: mockProfiles.length,
+          })
+        );
+      }
+
+      if (url.includes('/api/fs/directories')) {
+        const parsed = new URL(url);
+        const requestedPath = parsed.searchParams.get('path') || '';
+
+        if (requestedPath === '\\\\server') {
+          return Promise.resolve(
+            createFetchResponse({
+              path: '\\\\server',
+              parent: '',
+              items: [
+                { name: 'IT_dept', path: '\\\\server\\IT_dept' },
+                { name: 'software', path: '\\\\server\\software' },
+              ],
+            })
+          );
+        }
+
         return Promise.resolve(
           createFetchResponse({
             path: '\\\\server\\share',
             parent: '\\\\server',
-            items: [],
+            items: [{ name: 'Team', path: '\\\\server\\share\\Team' }],
+          })
+        );
+      }
+
+      if (url.includes('/api/system/runtime-identity')) {
+        return Promise.resolve(
+          createFetchResponse({
+            account_name: 'EXAMPLE\\operator',
+            username: 'operator',
+            domain: 'EXAMPLE',
+            host: 'OPENAD-HOST',
+            goos: 'windows',
           })
         );
       }
@@ -116,6 +162,43 @@ describe('ScanExplorerConsole', () => {
     expect(mockOnScan).not.toHaveBeenCalled();
   });
 
+  test('shows the Windows credential boundary as soon as a UNC path is typed', async () => {
+    renderConsole();
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '\\\\server\\share' },
+    });
+
+    const notice = await screen.findByRole('status', { name: 'UNC credential boundary' });
+    expect(notice).toHaveTextContent('UNC access requires local Windows network credentials');
+    expect(notice).toHaveTextContent('EXAMPLE\\operator');
+    expect(notice).toHaveTextContent('Please make sure this Windows account can open the share in File Explorer');
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/system/runtime-identity'));
+  });
+
+  test('discovers shares from a bare UNC server root without starting a scan', async () => {
+    renderConsole();
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '\\\\server' },
+    });
+
+    expect(await screen.findByRole('button', { name: 'Discover Shares' })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', code: 'Enter' });
+    });
+
+    await waitFor(() => expect(mockOnPathChange).toHaveBeenCalledWith('\\\\server'));
+    expect(mockOnScan).not.toHaveBeenCalled();
+    expect(await screen.findByText('IT_dept')).toBeInTheDocument();
+    expect(await screen.findByText('software')).toBeInTheDocument();
+  });
+
   test('starts a UNC scan with the current typed path when Start Scan is clicked', async () => {
     renderConsole();
 
@@ -133,7 +216,56 @@ describe('ScanExplorerConsole', () => {
     expect(mockOnScan).toHaveBeenCalledWith('\\\\server\\share');
   });
 
-  test('still starts a local scan on Enter', async () => {
+  test('keeps UNC browsing and scan launch on local Windows credentials even when AD is configured', async () => {
+    mockProfiles = [{
+      id: 'profile-123',
+      name: 'Primary DC',
+      server: 'ldap://dc01.example.com',
+      base_dn: 'DC=example,DC=com',
+      bind_user: 'EXAMPLE\\scanner',
+      is_default: true,
+      last_test_ok: true,
+      last_tested_at: '2026-08-06T01:00:00Z',
+      created_at: '2026-08-06T01:00:00Z',
+      updated_at: '2026-08-06T01:00:00Z',
+    }];
+    renderConsole('', { adReady: true });
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '\\\\server' },
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', code: 'Enter' });
+    });
+
+    await waitFor(() => expect(mockOnPathChange).toHaveBeenCalledWith('\\\\server'));
+    const directoryCalls = (global.fetch as jest.MockedFunction<typeof fetch>).mock.calls
+      .map(([input]) => String(input))
+      .filter((url) => url.includes('/api/fs/directories'));
+    const serverDiscoveryURL = directoryCalls.find((url) => {
+      const parsed = new URL(url);
+      return parsed.searchParams.get('path') === '\\\\server';
+    });
+    expect(serverDiscoveryURL).toBeTruthy();
+    expect(new URL(serverDiscoveryURL as string).searchParams.has('unc_access_mode')).toBe(false);
+    expect(new URL(serverDiscoveryURL as string).searchParams.has('unc_access_connection_id')).toBe(false);
+    expect(screen.queryByLabelText('Use saved AD connection for UNC access')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '\\\\server\\share' },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start Scan' }));
+    });
+
+    const lastScanCall = mockOnScan.mock.calls[mockOnScan.mock.calls.length - 1];
+    expect(lastScanCall).toEqual(['\\\\server\\share']);
+  });
+
+  test('reveals a local path on Enter without starting the scan', async () => {
     renderConsole();
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
@@ -146,7 +278,8 @@ describe('ScanExplorerConsole', () => {
       fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', code: 'Enter' });
     });
 
-    await waitFor(() => expect(mockOnScan).toHaveBeenCalledWith('C:\\Data'));
+    await waitFor(() => expect(mockOnPathChange).toHaveBeenCalledWith('C:\\Data'));
+    expect(mockOnScan).not.toHaveBeenCalled();
   });
 
   test('routes the AD prerequisite action to system settings', async () => {

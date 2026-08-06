@@ -7,9 +7,10 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/google/uuid"
+	"github.com/weibinliao/OpenAD/internal/ad"
 	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/weibinliao/OpenAD/internal/secrets"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -116,11 +117,12 @@ func (service *Service) Create(input ProfileInput) (*models.ADConnectionProfile,
 		return nil, err
 	}
 
+	bindUser, _ := ad.NormalizeBindUser(input.BindUser, "")
 	profile := models.ADConnectionProfile{
 		Name:              strings.TrimSpace(input.Name),
 		Server:            strings.TrimSpace(input.Server),
 		BaseDN:            strings.TrimSpace(input.BaseDN),
-		BindUser:          strings.TrimSpace(input.BindUser),
+		BindUser:          bindUser,
 		EncryptedPassword: encrypted,
 		IsDefault:         input.IsDefault,
 	}
@@ -152,7 +154,7 @@ func (service *Service) Update(id uuid.UUID, input ProfileInput) (*models.ADConn
 	profile.Name = strings.TrimSpace(input.Name)
 	profile.Server = strings.TrimSpace(input.Server)
 	profile.BaseDN = strings.TrimSpace(input.BaseDN)
-	profile.BindUser = strings.TrimSpace(input.BindUser)
+	profile.BindUser, _ = ad.NormalizeBindUser(input.BindUser, "")
 	profile.IsDefault = input.IsDefault
 
 	if input.Password != "" {

@@ -30,8 +30,9 @@ internal sealed class DesktopRuntime : IDisposable
             webRoot);
         Directory.CreateDirectory(DataDirectory);
         Directory.CreateDirectory(WebViewDataDirectory);
-        var api = Path.Combine(root, "permission-protector-server.exe");
-        var web = Path.Combine(root, "permission-protector-web.exe");
+        var databasePath = ResolveDatabasePath(DataDirectory);
+        var api = Path.Combine(root, "OpenAD.Server.exe");
+        var web = Path.Combine(root, "OpenAD.Web.exe");
 
         var apiState = await ProbeAsync(ApiHealthUrl, ApiPort, RuntimeEndpointValidator.IsApiHealth, token);
         Process? apiProcess = null;
@@ -43,7 +44,6 @@ internal sealed class DesktopRuntime : IDisposable
         {
             EnsurePortAvailable(apiState, ApiPort, "API");
             status($"Starting local API on 127.0.0.1:{ApiPort}...");
-            var db = Path.Combine(DataDirectory, "permission-protector.db");
             apiProcess = Start(root, api, "", new Dictionary<string, string>
             {
                 ["API_HOST"] = "127.0.0.1",
@@ -51,7 +51,7 @@ internal sealed class DesktopRuntime : IDisposable
                 ["PORT"] = ApiPort.ToString(),
                 ["GIN_MODE"] = "release",
                 ["PERMISSION_PROTECTOR_DATA_DIR"] = DataDirectory,
-                ["DATABASE_URL"] = "sqlite://" + db
+                ["DATABASE_URL"] = "sqlite://" + databasePath
             });
             await WaitFor(
                 () => ProbeAsync(ApiHealthUrl, ApiPort, RuntimeEndpointValidator.IsApiHealth, token),
@@ -162,6 +162,37 @@ internal sealed class DesktopRuntime : IDisposable
         }
     }
 
+    internal static string ResolveDatabasePath(string dataDirectory)
+    {
+        var currentPath = Path.Combine(dataDirectory, "OpenAD.db");
+        var legacyPath = Path.Combine(dataDirectory, "permission-protector.db");
+        if (File.Exists(currentPath) || !File.Exists(legacyPath))
+        {
+            return currentPath;
+        }
+
+        var sidecars = new[] { "-wal", "-shm" };
+        try
+        {
+            foreach (var suffix in sidecars)
+            {
+                var legacySidecar = legacyPath + suffix;
+                var currentSidecar = currentPath + suffix;
+                if (File.Exists(legacySidecar) && !File.Exists(currentSidecar))
+                {
+                    File.Move(legacySidecar, currentSidecar);
+                }
+            }
+            File.Move(legacyPath, currentPath);
+            return currentPath;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Keep using the legacy file when an in-place upgrade cannot be completed.
+            return legacyPath;
+        }
+    }
+
     private static string FindRuntimeRoot()
     {
         var roots = new[]
@@ -173,15 +204,15 @@ internal sealed class DesktopRuntime : IDisposable
 
         foreach (var root in roots.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => Path.GetFullPath(value!)))
         {
-            if (File.Exists(Path.Combine(root, "permission-protector-server.exe"))
-                && File.Exists(Path.Combine(root, "permission-protector-web.exe"))
+            if (File.Exists(Path.Combine(root, "OpenAD.Server.exe"))
+                && File.Exists(Path.Combine(root, "OpenAD.Web.exe"))
                 && File.Exists(Path.Combine(root, "web", "index.html")))
             {
                 return root;
             }
         }
 
-        throw new InvalidOperationException("Desktop package is incomplete. Keep OpenAD.exe beside permission-protector-server.exe, permission-protector-web.exe, and web\\index.html.");
+        throw new InvalidOperationException("Desktop package is incomplete. Keep OpenAD.exe beside OpenAD.Server.exe, OpenAD.Web.exe, and web\\index.html.");
     }
 
     private Process Start(string root, string fileName, string arguments, IReadOnlyDictionary<string, string> environment)

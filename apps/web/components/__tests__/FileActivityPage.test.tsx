@@ -22,7 +22,7 @@ jest.mock('../../contexts/ADConnectionContext', () => ({
 describe('FileActivityPage prerequisites', () => {
   beforeEach(() => {
     push.mockReset();
-    global.fetch = jest.fn(() => new Promise(() => {})) as jest.MockedFunction<typeof fetch>;
+    global.fetch = jest.fn(() => new Promise(() => {})) as unknown as jest.MockedFunction<typeof fetch>;
   });
 
   test('keeps the readiness layout stable and opens AD settings', () => {

@@ -2,8 +2,8 @@
 REM Backs up the local OpenAD SQLite database.
 setlocal enabledelayedexpansion
 
-if "%PERMISSION_PROTECTOR_DATA_DIR%"=="" set "PERMISSION_PROTECTOR_DATA_DIR=%APPDATA%\PermissionProtector"
-set "DB_FILE=%PERMISSION_PROTECTOR_DATA_DIR%\permission-protector.db"
+if "%PERMISSION_PROTECTOR_DATA_DIR%"=="" set "PERMISSION_PROTECTOR_DATA_DIR=%APPDATA%\OpenAD"
+set "DB_FILE=%PERMISSION_PROTECTOR_DATA_DIR%\OpenAD.db"
 set "BACKUP_DIR=%~1"
 if "%BACKUP_DIR%"=="" set "BACKUP_DIR=%PERMISSION_PROTECTOR_DATA_DIR%\backups"
 if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
@@ -15,7 +15,7 @@ if not exist "%DB_FILE%" (
 )
 
 for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%I"
-set "BACKUP_STEM=%BACKUP_DIR%\permission-protector-%STAMP%"
+set "BACKUP_STEM=%BACKUP_DIR%\OpenAD-%STAMP%"
 set "BACKUP_FILE=%BACKUP_STEM%.db"
 
 copy /Y "%DB_FILE%" "%BACKUP_FILE%" >nul

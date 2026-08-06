@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/weibinliao/OpenAD/internal/secrets"
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -51,6 +51,25 @@ func TestCreateEncryptsPassword(t *testing.T) {
 	}
 	if resolved.Password != "Secr3t!" {
 		t.Fatalf("resolved password mismatch: %q", resolved.Password)
+	}
+}
+
+func TestCreateNormalizesDNSDomainBackslashAccount(t *testing.T) {
+	service := newTestService(t)
+
+	profile, err := service.Create(ProfileInput{
+		Name:     "example-dc",
+		Server:   "ldap://dc01.example.com",
+		BaseDN:   "DC=example,DC=com",
+		BindUser: "example.com\\alice",
+		Password: "Secr3t!",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if profile.BindUser != "alice@example.com" {
+		t.Fatalf("expected normalized UPN, got %q", profile.BindUser)
 	}
 }
 

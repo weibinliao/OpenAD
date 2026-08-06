@@ -39,7 +39,7 @@ describe('IdentityPage desktop workflow', () => {
     global.fetch = jest.fn(() => Promise.resolve({
       ok: true,
       json: async () => ({ items: [] }),
-    } as Response)) as jest.MockedFunction<typeof fetch>;
+    } as Response)) as unknown as jest.MockedFunction<typeof fetch>;
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -57,7 +57,7 @@ describe('IdentityPage desktop workflow', () => {
   });
 
   test('shows a retry action when the directory snapshot status cannot be loaded', async () => {
-    global.fetch = jest.fn().mockRejectedValue(new Error('offline')) as jest.MockedFunction<typeof fetch>;
+    global.fetch = jest.fn().mockRejectedValue(new Error('offline')) as unknown as jest.MockedFunction<typeof fetch>;
 
     render(<I18nProvider><IdentityPage /></I18nProvider>);
 

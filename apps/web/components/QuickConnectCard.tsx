@@ -78,7 +78,7 @@ export function QuickConnectCard({ onConnected, className }: { onConnected?: () 
         }
         description={d.quickConnect.subtitle}
       />
-      <CardContent className="openad-quick-connect-content space-y-3">
+      <CardContent className="openad-quick-connect-content">
         <div>
           <Label htmlFor="qc-server">{d.settings.fieldServer}</Label>
           <Input
@@ -88,6 +88,7 @@ export function QuickConnectCard({ onConnected, className }: { onConnected?: () 
             placeholder="192.0.2.10"
             autoFocus
           />
+          <FieldHint className="openad-quick-connect-field-hint">{d.settings.fieldServerHint}</FieldHint>
         </div>
         <div>
           <Label htmlFor="qc-user">{d.settings.fieldBindUser}</Label>
@@ -97,7 +98,7 @@ export function QuickConnectCard({ onConnected, className }: { onConnected?: () 
             onChange={(event) => setUser(event.target.value)}
             placeholder="EXAMPLE\\alice"
           />
-          <FieldHint>{d.settings.fieldBindUserHint}</FieldHint>
+          <FieldHint className="openad-quick-connect-field-hint">{d.settings.fieldBindUserHint}</FieldHint>
         </div>
         <div>
           <Label htmlFor="qc-pass">{d.settings.fieldPassword}</Label>

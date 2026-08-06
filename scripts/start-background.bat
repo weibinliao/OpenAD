@@ -5,7 +5,7 @@ setlocal enabledelayedexpansion
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%.") do set "SCRIPT_HOME=%%~fI"
 set "PROJECT_ROOT=%SCRIPT_HOME%"
-if not exist "%PROJECT_ROOT%\permission-protector-server.exe" set "PROJECT_ROOT=%SCRIPT_HOME%\.."
+if not exist "%PROJECT_ROOT%\OpenAD.Server.exe" set "PROJECT_ROOT=%SCRIPT_HOME%\.."
 for %%I in ("%PROJECT_ROOT%") do set "PROJECT_ROOT=%%~fI"
 
 set "START_BACKGROUND_SCRIPT=%PROJECT_ROOT%\scripts\start-background.ps1"
@@ -24,14 +24,14 @@ if /I "%WEB_HOST%"=="0.0.0.0" set "LAN_WEB_BIND=1"
 if "%LAN_WEB_BIND%"=="1" if /I "%PUBLIC_HOST%"=="localhost" (
     for /f "usebackq delims=" %%H in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$primary = Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.IPv4DefaultGateway -and $_.IPv4Address } | Sort-Object InterfaceMetric | Select-Object -First 1; if ($primary) { $primary.IPv4Address[0].IPAddress } else { $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.254*' -and $_.PrefixOrigin -ne 'WellKnown' } | Sort-Object InterfaceMetric | Select-Object -First 1 -ExpandProperty IPAddress; if ($ip) { $ip } else { 'localhost' } }"`) do set "PUBLIC_HOST=%%H"
 )
-if "%PERMISSION_PROTECTOR_DATA_DIR%"=="" set "PERMISSION_PROTECTOR_DATA_DIR=%APPDATA%\PermissionProtector"
+if "%PERMISSION_PROTECTOR_DATA_DIR%"=="" set "PERMISSION_PROTECTOR_DATA_DIR=%APPDATA%\OpenAD"
 if not exist "%PERMISSION_PROTECTOR_DATA_DIR%" mkdir "%PERMISSION_PROTECTOR_DATA_DIR%"
-if "%DATABASE_URL%"=="" set "DATABASE_URL=sqlite:///%PERMISSION_PROTECTOR_DATA_DIR%\permission-protector.db"
+if "%DATABASE_URL%"=="" set "DATABASE_URL=sqlite:///%PERMISSION_PROTECTOR_DATA_DIR%\OpenAD.db"
 set "RUN_DIR=%PERMISSION_PROTECTOR_DATA_DIR%\run"
 if not exist "%RUN_DIR%" mkdir "%RUN_DIR%"
 
-if not exist "%PROJECT_ROOT%\permission-protector-server.exe" (
-    echo [ERROR] OpenAD API service (permission-protector-server.exe) not found in %PROJECT_ROOT%
+if not exist "%PROJECT_ROOT%\OpenAD.Server.exe" (
+    echo [ERROR] OpenAD API service (OpenAD.Server.exe) not found in %PROJECT_ROOT%
     exit /b 1
 )
 

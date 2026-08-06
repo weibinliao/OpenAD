@@ -1,5 +1,5 @@
 param(
-    [string]$NodeVersion = "18.20.4",
+    [string]$NodeVersion = "22.23.2",
     [switch]$Force
 )
 
@@ -81,9 +81,13 @@ Write-Host "== OpenAD: Portable Node Bootstrap =="
 Write-Host "Project root: $projectRoot"
 
 if ((Test-PortableNodeReady -NodeExePath $nodeExe -NpmCmdPath $npmCmd -NpmPrefixJsPath $npmPrefixJs -NpmCliJsPath $npmCliJs) -and -not $Force) {
-    $version = & $nodeExe --version
-    Write-Host "Portable Node already exists: $version"
-    exit 0
+    $version = (& $nodeExe --version).Trim()
+    if ($version -eq "v$NodeVersion") {
+        Write-Host "Portable Node already exists: $version"
+        exit 0
+    }
+    Write-Host "Portable Node $version does not match requested v$NodeVersion. Upgrading..."
+    Remove-Item -Recurse -Force $nodeDir
 }
 
 if ($Force -and (Test-Path $nodeDir)) {
@@ -103,18 +107,10 @@ if (Test-Path $preferredZip) {
     $zipPath = $preferredZip
     Write-Host "Using bundled Node archive: $zipPath"
 } else {
-    $bundledArchives = Get-ChildItem -Path $toolsDir -Filter "node-v*-win-x64.zip" -File -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending
-
-    if ($bundledArchives.Count -gt 0) {
-        $zipPath = $bundledArchives[0].FullName
-        Write-Host "Requested version archive not found. Using bundled archive: $zipPath"
-    } else {
-        $zipPath = $downloadPath
-        Write-Host "No bundled Node archive found. Downloading from: $downloadUrl"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
-        $downloadedZip = $true
-    }
+    $zipPath = $downloadPath
+    Write-Host "Requested Node archive not bundled. Downloading from: $downloadUrl"
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
+    $downloadedZip = $true
 }
 
 $extractRoot = Join-Path $toolsDir "_node_extract"

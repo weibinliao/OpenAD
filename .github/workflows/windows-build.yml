@@ -9,7 +9,7 @@ on:
       version:
         description: 不包含 v 前缀的安装包版本号 / Package version without the v prefix
         required: false
-        default: 0.1.0
+        default: 1.0.0
 
 permissions:
   contents: read
@@ -41,11 +41,15 @@ jobs:
           if ('${{ github.ref_type }}' -eq 'tag') {
             $version = '${{ github.ref_name }}'.TrimStart('v')
           }
-          .\scripts\build-desktop-windows.ps1 -Version $version
+          .\scripts\build-windows-installer.ps1 -Version $version
 
       - name: 上传桌面包 / Upload desktop package
         uses: actions/upload-artifact@v4
         with:
           name: openad-windows-${{ github.run_number }}
-          path: dist/PermissionProtector-Windows-Desktop-v*/
+          path: |
+            dist/OpenAD.exe
+            dist/OpenAD.exe.sha256
+            dist/OpenAD-v*-win-x64.zip
+            dist/OpenAD-v*-win-x64.zip.sha256
           if-no-files-found: error

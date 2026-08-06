@@ -58,6 +58,11 @@ func (application *application) handleScan(ctx *gin.Context) {
 		return
 	}
 
+	if isUNCServerRootPath(request.Path) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "select a UNC share or subdirectory before scanning"})
+		return
+	}
+
 	includeInherited := true
 	if request.IncludeInherited != nil {
 		includeInherited = *request.IncludeInherited

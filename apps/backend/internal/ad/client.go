@@ -59,7 +59,8 @@ func NewADClient(server, baseDN, username, password string) (*ADClient, error) {
 	}
 	conn.SetTimeout(5 * time.Second)
 
-	err = conn.Bind(strings.TrimSpace(username), password)
+	bindUser, _ := NormalizeBindUser(username, "")
+	err = conn.Bind(bindUser, password)
 	if err != nil {
 		conn.Close()
 		return nil, err

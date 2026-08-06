@@ -12,10 +12,11 @@
     "incremental": true,
     "esModuleInterop": true,
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve"
+    "jsx": "react-jsx",
+    "target": "ES2018"
   },
   "include": [
     "next-env.d.ts",
@@ -24,6 +25,9 @@
   ],
   "exclude": [
     "node_modules",
-    "test-setup.ts"
+    "test-setup.ts",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx"
   ]
 }

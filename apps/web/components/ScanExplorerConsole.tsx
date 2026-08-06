@@ -35,13 +35,14 @@ interface DirectoryResponse {
   error?: string;
 }
 
-type NodeKind = 'drive' | 'share' | 'folder';
+type NodeKind = 'drive' | 'server' | 'share' | 'folder';
 
 interface TreeNode {
   path: string;
   name: string;
   parentPath: string;
   kind: NodeKind;
+  accessKey: string;
   loaded: boolean;
   loading: boolean;
   expanded: boolean;
@@ -97,6 +98,22 @@ function isUNCPath(path: string) {
   return normalizePath(path).startsWith('\\\\');
 }
 
+function uncPathParts(path: string) {
+  const normalized = normalizePath(path);
+  if (!isUNCPath(normalized)) {
+    return [];
+  }
+
+  return normalized
+    .replace(/^\\\\+/, '')
+    .split('\\')
+    .filter(Boolean);
+}
+
+function isUNCServerRootPath(path: string) {
+  return uncPathParts(path).length === 1;
+}
+
 function formatNumber(value: number) {
   return new Intl.NumberFormat().format(value);
 }
@@ -125,15 +142,14 @@ function splitPathSegments(path: string) {
   }
 
   if (isUNCPath(normalized)) {
-    const trimmed = normalized.replace(/^\\\\+/, '');
-    const parts = trimmed.split('\\').filter(Boolean);
-    if (parts.length < 2) {
+    const parts = uncPathParts(normalized);
+    if (parts.length < 1) {
       return [];
     }
 
-    const segments = [`\\\\${parts[0]}\\${parts[1]}`];
+    const segments = [`\\\\${parts[0]}`];
     let current = segments[0];
-    for (const part of parts.slice(2)) {
+    for (const part of parts.slice(1)) {
       current = `${current}\\${part}`;
       segments.push(current);
     }
@@ -163,9 +179,12 @@ function displayNameForPath(path: string) {
   }
 
   if (isUNCPath(normalized)) {
-    const segments = normalized.replace(/^\\\\+/, '').split('\\').filter(Boolean);
-    if (segments.length <= 2) {
-      return `\\\\${segments.join('\\')}`;
+    const segments = uncPathParts(normalized);
+    if (segments.length === 0) {
+      return normalized;
+    }
+    if (segments.length === 1) {
+      return `\\\\${segments[0]}`;
     }
     return segments[segments.length - 1];
   }
@@ -204,8 +223,15 @@ function kindForPath(path: string, parentPath: string): NodeKind {
   if (/^[A-Za-z]:\\$/.test(normalized)) {
     return 'drive';
   }
-  if (isUNCPath(normalized) && !parentPath) {
-    return 'share';
+  if (isUNCPath(normalized)) {
+    const parts = uncPathParts(normalized);
+    if (parts.length === 1) {
+      return 'server';
+    }
+    if (parts.length === 2) {
+      return 'share';
+    }
+    return 'folder';
   }
   return 'folder';
 }
@@ -220,6 +246,9 @@ function breadcrumbItems(path: string) {
 function nodeIcon(kind: NodeKind, expanded: boolean) {
   if (kind === 'drive') {
     return <HardDrive className="h-4 w-4 text-info" />;
+  }
+  if (kind === 'server') {
+    return <Server className="h-4 w-4 text-accent-fg" />;
   }
   if (kind === 'share') {
     return <Network className="h-4 w-4 text-accent-fg" />;
@@ -261,20 +290,37 @@ function isWindowsCredentialError(message: string) {
 
 function friendlyDirectoryError(locale: string, targetPath: string, rawError: string) {
   const message = rawError.trim() || text(locale, 'Failed to load directories.', '加载目录失败。');
+  const accessLabel = text(locale, 'the current Windows network credentials', '当前 Windows 网络凭据');
 
-  if (isUNCPath(targetPath)) {
+  if (isUNCServerRootPath(targetPath)) {
     if (isWindowsCredentialError(message)) {
       return text(
         locale,
-        `Windows rejected the account used by the backend while opening ${targetPath}. UNC browsing and scanning use the Windows identity running OpenAD; AD is only used to resolve names and groups. Raw error: ${message}`,
-        `后端在打开 ${targetPath} 时被 Windows 拒绝了账号。UNC 浏览和扫描使用的是运行 OpenAD 的 Windows 身份；AD 只用于解析名称和组。原始错误：${message}`
+        `Windows rejected ${accessLabel} while discovering shares under ${targetPath}. Open the UNC path in File Explorer or connect it with net use first, then retry in OpenAD. Raw error: ${message}`,
+        `Windows 在发现 ${targetPath} 下的共享时拒绝了${accessLabel}。请先在文件资源管理器中打开该 UNC，或使用 net use 建立本地网络凭据后再回到 OpenAD 重试。原始错误：${message}`
       );
     }
 
     return text(
       locale,
-      `UNC browsing failed for ${targetPath}. UNC browsing and scanning use the backend Windows identity. Raw error: ${message}`,
-      `UNC 浏览 ${targetPath} 失败。UNC 浏览和扫描使用后端的 Windows 身份。原始错误：${message}`
+      `UNC share discovery failed for ${targetPath}. OpenAD uses the current Windows network credentials for UNC access. Raw error: ${message}`,
+      `UNC 共享发现 ${targetPath} 失败。OpenAD 使用当前 Windows 网络凭据访问 UNC。原始错误：${message}`
+    );
+  }
+
+  if (isUNCPath(targetPath)) {
+    if (isWindowsCredentialError(message)) {
+      return text(
+        locale,
+        `Windows rejected ${accessLabel} while opening ${targetPath}. Open the share in File Explorer or connect it with net use first, then retry in OpenAD. Raw error: ${message}`,
+        `Windows 在打开 ${targetPath} 时拒绝了${accessLabel}。请先在文件资源管理器中打开该共享，或使用 net use 建立本地网络凭据后再回到 OpenAD 重试。原始错误：${message}`
+      );
+    }
+
+    return text(
+      locale,
+      `UNC browsing failed for ${targetPath}. OpenAD uses the current Windows network credentials for UNC access. Raw error: ${message}`,
+      `UNC 浏览 ${targetPath} 失败。OpenAD 使用当前 Windows 网络凭据访问 UNC。原始错误：${message}`
     );
   }
 
@@ -319,7 +365,7 @@ export default function ScanExplorerConsole({
   onCancelScan,
 }: ScanExplorerConsoleProps) {
   const router = useRouter();
-  const { config, connection } = useADConnection();
+  const { connection } = useADConnection();
   const [pathInput, setPathInput] = useState(path);
   const [nodes, setNodes] = useState<Record<string, TreeNode>>({});
   const [rootPaths, setRootPaths] = useState<string[]>([]);
@@ -337,8 +383,12 @@ export default function ScanExplorerConsole({
 
   const selectedPath = normalizePath(path);
   const selectedTrail = useMemo(() => breadcrumbItems(selectedPath), [selectedPath]);
-  const showADPanel = isUNCPath(selectedPath);
   const stagedPath = normalizePath(pathInput || selectedPath);
+  const showADPanel = isUNCPath(stagedPath);
+  const primaryActionLabel = isUNCServerRootPath(stagedPath)
+    ? text(locale, 'Discover Shares', '发现共享')
+    : text(locale, 'Start Scan', '开始扫描');
+  const primaryActionIcon = isUNCServerRootPath(stagedPath) ? <Server className="h-4 w-4" /> : <Play className="h-4 w-4" />;
   const scanScopeActive = isPathWithinScope(selectedPath, progressTrackedPath);
   const hasProgressSnapshot =
     scanScopeActive &&
@@ -426,9 +476,21 @@ export default function ScanExplorerConsole({
     return () => window.clearInterval(timer);
   }, [progressStartedAt, progressStatus]);
 
+  const directoryAccessKeyForPath = (targetPath: string) => {
+    if (!isUNCPath(targetPath)) {
+      return 'local';
+    }
+
+    return 'windows';
+  };
+
   const fetchDirectories = async (targetPath: string) => {
     const normalized = normalizePath(targetPath);
-    const query = normalized ? `?path=${encodeURIComponent(normalized)}` : '';
+    const params = new URLSearchParams();
+    if (normalized) {
+      params.set('path', normalized);
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
     const response = await fetch(`${apiBase()}/api/fs/directories${query}`);
     const data = (await response.json()) as DirectoryResponse;
     if (!response.ok) {
@@ -454,6 +516,7 @@ export default function ScanExplorerConsole({
           name: displayNameForPath(normalized),
           parentPath: '',
           kind: kindForPath(normalized, ''),
+          accessKey: directoryAccessKeyForPath(normalized),
           loaded: false,
           loading: false,
           expanded: true,
@@ -479,6 +542,7 @@ export default function ScanExplorerConsole({
           name: existingParent?.name || displayNameForPath(normalizedParent),
           parentPath: existingParent?.parentPath || '',
           kind: existingParent?.kind || kindForPath(normalizedParent, ''),
+          accessKey: directoryAccessKeyForPath(normalizedParent),
           loaded: true,
           loading: false,
           expanded: true,
@@ -494,6 +558,7 @@ export default function ScanExplorerConsole({
           name: item.name || existing?.name || displayNameForPath(normalized),
           parentPath: normalizedParent,
           kind: existing?.kind || kindForPath(normalized, normalizedParent),
+          accessKey: directoryAccessKeyForPath(normalized),
           loaded: existing?.loaded || false,
           loading: false,
           expanded: existing?.expanded || false,
@@ -535,6 +600,7 @@ export default function ScanExplorerConsole({
       return;
     }
 
+    const requestedAccessKey = directoryAccessKeyForPath(normalized);
     setTreeError('');
     setTreeErrorTarget('');
     setNodes((current) => ({
@@ -544,6 +610,7 @@ export default function ScanExplorerConsole({
         name: current[normalized]?.name || displayNameForPath(normalized),
         parentPath: current[normalized]?.parentPath || '',
         kind: current[normalized]?.kind || kindForPath(normalized, ''),
+        accessKey: requestedAccessKey,
         loaded: current[normalized]?.loaded || false,
         loading: true,
         expanded: options?.expand ?? true,
@@ -553,7 +620,7 @@ export default function ScanExplorerConsole({
 
     try {
       const existing = nodes[normalized];
-      if (existing?.loaded && !options?.force) {
+      if (existing?.loaded && existing.accessKey === requestedAccessKey && !options?.force) {
         setNodes((current) => ({
           ...current,
           [normalized]: { ...current[normalized], loading: false, expanded: options?.expand ?? true },
@@ -578,6 +645,7 @@ export default function ScanExplorerConsole({
           name: current[normalized]?.name || displayNameForPath(normalized),
           parentPath: current[normalized]?.parentPath || '',
           kind: current[normalized]?.kind || kindForPath(normalized, ''),
+          accessKey: requestedAccessKey,
           loaded: current[normalized]?.loaded || false,
           loading: false,
           expanded: current[normalized]?.expanded || false,
@@ -620,6 +688,7 @@ export default function ScanExplorerConsole({
           name: current[segment]?.name || displayNameForPath(segment),
           parentPath: current[segment]?.parentPath || '',
           kind: current[segment]?.kind || kindForPath(segment, current[segment]?.parentPath || ''),
+          accessKey: directoryAccessKeyForPath(segment),
           loaded: current[segment]?.loaded || false,
           loading: current[segment]?.loading || false,
           expanded: true,
@@ -688,7 +757,7 @@ export default function ScanExplorerConsole({
           >
             <button
               type="button"
-              aria-label={text(locale, 'Toggle folder', '切换目录')}
+              aria-label={text(locale, 'Toggle node', '切换节点')}
               onClick={() => void handleToggleNode(node.path)}
               className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-fg-muted transition-colors hover:text-fg disabled:pointer-events-none disabled:opacity-40"
               disabled={!expandable}
@@ -712,14 +781,21 @@ export default function ScanExplorerConsole({
     );
   };
 
-  const handleStartScan = () => {
+  const handleStartScan = async () => {
     const nextPath = normalizePath(pathInput || selectedPath);
     if (!nextPath) {
       return;
     }
 
-    if (nextPath !== selectedPath) {
-      void revealPath(nextPath);
+    if (isUNCServerRootPath(nextPath)) {
+      await revealPath(nextPath);
+      return;
+    }
+
+    if (isUNCPath(nextPath)) {
+      await revealPath(nextPath);
+    } else if (nextPath !== selectedPath) {
+      await revealPath(nextPath);
     }
 
     onScan(nextPath);
@@ -742,13 +818,9 @@ export default function ScanExplorerConsole({
                       return;
                     }
 
-                    if (isUNCPath(nextPath)) {
-                      // Keep UNC browsing explicit: reveal the tree first so the failure is visible.
-                      void revealPath(nextPath);
-                      return;
-                    }
-
-                    handleStartScan();
+                    // Enter is intentionally a safe discovery action. Scanning
+                    // only starts when the operator explicitly clicks Start Scan.
+                    void revealPath(nextPath);
                   }
                 }}
                 placeholder="C:\\Data or \\\\server\\share"
@@ -778,15 +850,15 @@ export default function ScanExplorerConsole({
               />
               <span className="whitespace-nowrap">{text(locale, 'Include inherited', '包含继承')}</span>
             </label>
-            <Button
-              type="button"
-              onClick={handleStartScan}
-              disabled={loading || !pathInput.trim()}
-              variant="primary"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {loading ? text(locale, 'Scanning…', '扫描中…') : text(locale, 'Start Scan', '开始扫描')}
-            </Button>
+              <Button
+                type="button"
+                onClick={() => void handleStartScan()}
+                disabled={loading || !pathInput.trim()}
+                variant="primary"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : primaryActionIcon}
+                {loading ? text(locale, 'Scanning…', '扫描中…') : primaryActionLabel}
+              </Button>
             {canCancelScan ? (
               <Button
                 type="button"
@@ -812,6 +884,42 @@ export default function ScanExplorerConsole({
           <p className="truncate font-mono text-2xs text-fg-muted">
             {stagedPath || text(locale, 'Select a directory or enter a path.', '请选择目录或输入路径。')}
           </p>
+
+          {showADPanel ? (
+            <div
+              role="status"
+              aria-label={text(locale, 'UNC credential boundary', 'UNC 凭据边界')}
+              className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-soft px-3 py-3 sm:flex-row sm:items-start sm:justify-between"
+            >
+              <div className="flex min-w-0 items-start gap-2.5">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-fg">
+                    {text(locale, 'UNC access requires local Windows network credentials', 'UNC 访问需要本地 Windows 网络凭据')}
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-fg-secondary">
+                    {runtimeIdentity?.account_name
+                      ? text(
+                          locale,
+                          `OpenAD will browse and scan this UNC path through the current Windows session (${runtimeIdentity.account_name}). Please make sure this Windows account can open the share in File Explorer, or connect it with net use before scanning. The saved AD connection remains read-only and is only used for SID and group resolution.`,
+                          `OpenAD 会通过当前 Windows 会话（${runtimeIdentity.account_name}）浏览和扫描此 UNC 路径。请先确认这个 Windows 账号能在文件资源管理器中打开共享，或先用 net use 建立本地网络凭据后再扫描。已保存 AD 连接仍然只读，只用于 SID 和组关系解析。`
+                        )
+                      : text(
+                          locale,
+                          'OpenAD browses and scans UNC paths through the current Windows session. Please make sure Windows can already open this share in File Explorer, or connect it with net use before scanning. The saved AD connection is not used to open SMB shares.',
+                          'OpenAD 通过当前 Windows 会话浏览和扫描 UNC 路径。请先确认 Windows 已经能在文件资源管理器中打开该共享，或先用 net use 建立本地网络凭据后再扫描。已保存 AD 连接不会用于打开 SMB 共享。'
+                        )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-1.5">
+                <Badge tone="warning">
+                  {text(locale, 'Windows network credentials', 'Windows 网络凭据')}
+                </Badge>
+                <Badge tone={adReady ? 'success' : 'neutral'}>{text(locale, 'AD stays read-only', 'AD 保持只读')}</Badge>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -849,7 +957,13 @@ export default function ScanExplorerConsole({
               <div className="mx-2 mb-3 flex items-start gap-2 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2.5 text-sm text-danger">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="min-w-0">
-                  <div className="font-medium">{isUNCPath(treeErrorTarget || selectedPath) ? text(locale, 'UNC share could not be opened', 'UNC 共享无法打开') : text(locale, 'Tree loading failed', '目录树加载失败')}</div>
+                  <div className="font-medium">
+                    {isUNCServerRootPath(treeErrorTarget || selectedPath)
+                      ? text(locale, 'UNC share discovery failed', 'UNC 共享发现失败')
+                      : isUNCPath(treeErrorTarget || selectedPath)
+                        ? text(locale, 'UNC share could not be opened', 'UNC 共享无法打开')
+                        : text(locale, 'Tree loading failed', '目录树加载失败')}
+                  </div>
                   <div className="mt-0.5 text-xs">{treeError}</div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {treeErrorTarget ? (
@@ -863,10 +977,10 @@ export default function ScanExplorerConsole({
                         {text(locale, 'Retry browse', '重试浏览')}
                       </Button>
                     ) : null}
-                    {isUNCPath(treeErrorTarget || selectedPath) ? (
+                    {isUNCPath(treeErrorTarget || selectedPath) && !isUNCServerRootPath(treeErrorTarget || selectedPath) ? (
                       <Button
                         type="button"
-                        onClick={handleStartScan}
+                        onClick={() => void handleStartScan()}
                         disabled={loading || !pathInput.trim()}
                         variant="primary"
                         size="sm"
@@ -979,7 +1093,9 @@ export default function ScanExplorerConsole({
             {showADPanel ? (
               <>
                 <p className="mt-2 text-xs leading-5 text-fg-muted">
-                  {adReady ? text(locale, 'Share access stays on the backend Windows identity; AD only enriches identity resolution.', '共享访问仍由后端 Windows 身份执行；AD 只增强身份解析。') : text(locale, 'The scan can still run without AD if the backend Windows identity can access the share.', '如果后端 Windows 身份能访问共享，即使不连 AD 也可以继续扫描。')}
+                  {adReady
+                    ? text(locale, 'UNC access relies on the current Windows network session. AD only enriches SID, user, and group resolution after the share can be read.', 'UNC 访问依赖当前 Windows 网络会话。只有共享本身可读后，AD 才用于补充 SID、用户和组解析。')
+                    : text(locale, 'The scan can still run without AD if the current Windows session can access the share. Configure AD only when you need domain identity enrichment.', '只要当前 Windows 会话能访问共享，即使不连接 AD 也可以扫描；只有需要域身份补全时才配置 AD。')}
                 </p>
                 <div className="mt-3 grid grid-cols-1 gap-2">
                   <div className="rounded-md border border-line bg-surface-sunken px-2 py-1.5">
@@ -987,8 +1103,8 @@ export default function ScanExplorerConsole({
                     <div className="break-all text-sm font-semibold text-fg">{runtimeIdentity?.account_name || text(locale, 'Unavailable', '暂不可用')}</div>
                   </div>
                   <div className="rounded-md border border-line bg-surface-sunken px-2 py-1.5">
-                    <div className="text-2xs text-fg-muted">{text(locale, 'Directory account', '目录账号')}</div>
-                    <div className="break-all text-sm font-semibold text-fg">{config.username || text(locale, 'Not configured', '尚未配置')}</div>
+                    <div className="text-2xs text-fg-muted">{text(locale, 'UNC prerequisite', 'UNC 前置条件')}</div>
+                    <div className="break-all text-sm font-semibold text-fg">{text(locale, 'Windows can open the share locally', 'Windows 本地可打开共享')}</div>
                   </div>
                 </div>
 
@@ -1003,9 +1119,7 @@ export default function ScanExplorerConsole({
                 ) : null}
 
                 <div className="mt-3 rounded-md border border-line bg-surface-sunken px-3 py-2 text-xs leading-5 text-fg-muted">
-                  {adReady
-                    ? text(locale, 'AD credential changes live in System Settings, keeping this scan panel focused on path selection and runtime state.', 'AD 凭据修改统一放在系统设置，这里只保留路径选择与运行状态。')
-                    : text(locale, 'Open System Settings to configure or verify AD before identity expansion.', '请打开系统设置配置或验证 AD，再进行身份展开。')}
+                  {text(locale, 'If browsing fails, first open the UNC path in File Explorer or connect it with net use / Windows Credential Manager, then retry in OpenAD.', '如果浏览失败，请先在文件资源管理器中打开该 UNC，或通过 net use / Windows 凭据管理器建立网络凭据，再回到 OpenAD 重试。')}
                 </div>
               </>
             ) : (

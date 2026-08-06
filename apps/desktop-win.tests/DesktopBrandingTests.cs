@@ -12,7 +12,7 @@ public sealed class DesktopBrandingTests
     public void DesktopProjectEmbedsOpenADApplicationIcon()
     {
         var projectDirectory = FindProjectDirectory();
-        var projectPath = Path.Combine(projectDirectory, "PermissionProtector.Desktop.csproj");
+        var projectPath = Path.Combine(projectDirectory, "OpenAD.Desktop.csproj");
         var project = XDocument.Load(projectPath);
         var applicationIcon = project
             .Descendants()
@@ -147,7 +147,7 @@ public sealed class DesktopBrandingTests
                 current.FullName,
                 "apps",
                 "desktop-win",
-                "PermissionProtector.Desktop.csproj");
+                "OpenAD.Desktop.csproj");
             if (File.Exists(projectPath))
             {
                 return Path.GetDirectoryName(projectPath)!;

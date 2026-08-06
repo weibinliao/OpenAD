@@ -75,10 +75,12 @@ const storedProfiles: ConnectionProfile[] = [
 
 const refreshProfilesMock = jest.fn().mockResolvedValue(undefined);
 const setActiveProfileIdMock = jest.fn();
+const clearConnectionMock = jest.fn();
 const adConnectionState = {
   profiles: storedProfiles,
   profilesLoading: false,
   profilesOffline: false,
+  activeProfileId: 'profile-1' as string | null,
 };
 
 jest.mock('../../contexts/ADConnectionContext', () => ({
@@ -86,12 +88,12 @@ jest.mock('../../contexts/ADConnectionContext', () => ({
     config: { adServer: '', baseDN: '', username: '', password: '' },
     connection: { connected: false, message: '', testedAt: null },
     saveConnection: jest.fn(),
-    clearConnection: jest.fn(),
+    clearConnection: clearConnectionMock,
     profiles: adConnectionState.profiles,
     profilesLoading: adConnectionState.profilesLoading,
     profilesOffline: adConnectionState.profilesOffline,
     refreshProfiles: refreshProfilesMock,
-    activeProfileId: 'profile-1',
+    activeProfileId: adConnectionState.activeProfileId,
     setActiveProfileId: setActiveProfileIdMock,
     activeProfile: adConnectionState.profiles[0] || null,
   }),
@@ -110,6 +112,7 @@ describe('SettingsPage', () => {
     window.localStorage.setItem(WORKSPACE_SETTINGS_KEY, JSON.stringify(savedWorkspaceSettings));
     adConnectionState.profiles = storedProfiles;
     adConnectionState.profilesOffline = false;
+    adConnectionState.activeProfileId = 'profile-1';
 
     global.fetch = jest.fn(() =>
       Promise.resolve({
@@ -181,9 +184,14 @@ describe('SettingsPage', () => {
   test('opens the add-connection dialog and validates required fields', async () => {
     render(<SettingsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /Add connection/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Add AD connection/ }));
 
     expect(await screen.findByLabelText('Domain account')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Use EXAMPLE\\alice for a NetBIOS domain or alice@example.com for DNS/UPN. Do not use example.com\\alice; a bare username is expanded after discovery.'
+      )
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -193,14 +201,49 @@ describe('SettingsPage', () => {
   test('keeps the connection dialog scrollable within a short window', async () => {
     render(<SettingsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /Add connection/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Add AD connection/ }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Add connection' });
+    const dialog = await screen.findByRole('dialog', { name: 'Add AD connection' });
     expect(dialog).toHaveClass(
       'max-h-[calc(100dvh-2rem)]',
       'overflow-y-auto',
       'overscroll-contain',
     );
+  });
+
+  test('deletes a stored AD connection and clears the active profile when needed', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    adConnectionState.activeProfileId = null;
+    render(<SettingsPage />);
+
+    fireEvent.click((await screen.findAllByTitle('Delete'))[0]);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/ad/connections/profile-1'),
+        expect.objectContaining({ method: 'DELETE' })
+      );
+    });
+    expect(setActiveProfileIdMock).toHaveBeenCalledWith(null);
+    expect(clearConnectionMock).toHaveBeenCalled();
+    expect(refreshProfilesMock).toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  test('shows a local API message when deleting an AD connection cannot reach the backend', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    render(<SettingsPage />);
+
+    fireEvent.click((await screen.findAllByTitle('Delete'))[0]);
+
+    expect(
+      await screen.findByText(
+        'The local API could not be reached. The connection was not deleted; check the OpenAD backend and retry.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Failed to fetch')).not.toBeInTheDocument();
+    confirmSpy.mockRestore();
   });
 
   test('keeps scan and report configuration out of system settings', async () => {

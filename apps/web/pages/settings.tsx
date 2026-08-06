@@ -131,6 +131,8 @@ export default function SettingsPage() {
     refreshProfiles,
     activeProfileId,
     setActiveProfileId,
+    activeProfile,
+    clearConnection,
   } = useADConnection();
 
   // ---------------------------------------------------------------- AD connections
@@ -278,12 +280,15 @@ export default function SettingsPage() {
       if (!response.ok) {
         throw new Error(data.error || d.settings.deleteFailed);
       }
-      if (activeProfileId === profile.id) {
+      if (activeProfile?.id === profile.id) {
         setActiveProfileId(null);
+        clearConnection();
       }
       await refreshProfiles();
     } catch (error) {
-      setConnectionsActionError(error instanceof Error ? error.message : d.settings.deleteFailed);
+      setConnectionsActionError(
+        error instanceof TypeError ? d.settings.deleteNetworkError : error instanceof Error ? error.message : d.settings.deleteFailed
+      );
     }
   };
 

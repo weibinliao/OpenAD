@@ -48,4 +48,31 @@ public sealed class DesktopRuntimeCacheTests
             }
         }
     }
+
+    [Fact]
+    public void MigratesLegacyDatabaseFilenameToOpenAD()
+    {
+        var fixture = Path.Combine(Path.GetTempPath(), "openad-db-migration-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(fixture);
+        try
+        {
+            var legacy = Path.Combine(fixture, "permission-protector.db");
+            File.WriteAllText(legacy, "legacy-db");
+            File.WriteAllText(legacy + "-wal", "legacy-wal");
+
+            var resolved = DesktopRuntime.ResolveDatabasePath(fixture);
+
+            Assert.Equal(Path.Combine(fixture, "OpenAD.db"), resolved);
+            Assert.True(File.Exists(Path.Combine(fixture, "OpenAD.db")));
+            Assert.True(File.Exists(Path.Combine(fixture, "OpenAD.db-wal")));
+            Assert.False(File.Exists(legacy));
+        }
+        finally
+        {
+            if (Directory.Exists(fixture))
+            {
+                Directory.Delete(fixture, recursive: true);
+            }
+        }
+    }
 }

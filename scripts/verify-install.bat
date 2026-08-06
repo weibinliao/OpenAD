@@ -16,9 +16,9 @@ echo.
 
 set "MISSING_REQUIRED_FILE=0"
 for %%F in (
-    "%PROJECT_ROOT%\permission-protector-server.exe"
-    "%PROJECT_ROOT%\permission-protector-cli.exe"
-    "%PROJECT_ROOT%\permission-protector-web.exe"
+    "%PROJECT_ROOT%\OpenAD.Server.exe"
+    "%PROJECT_ROOT%\OpenAD.CLI.exe"
+    "%PROJECT_ROOT%\OpenAD.Web.exe"
     "%PROJECT_ROOT%\web\index.html"
     "%PROJECT_ROOT%\scripts\start-background.ps1"
     "%PROJECT_ROOT%\start-background.bat"
@@ -55,7 +55,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebReq
 if errorlevel 1 goto :fail
 
 echo [INFO] Checking CLI...
-"%PROJECT_ROOT%\permission-protector-cli.exe" --help >nul
+"%PROJECT_ROOT%\OpenAD.CLI.exe" --help >nul
 if errorlevel 1 goto :fail
 
 if "%STARTED_BY_VERIFY%"=="1" (

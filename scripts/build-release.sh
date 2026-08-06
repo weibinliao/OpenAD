@@ -2,7 +2,7 @@
 
 set -e
 
-RELEASE_VERSION="0.1.0"
+RELEASE_VERSION="1.0.0"
 RELEASE_DIR="dist/OpenAD-Linux-v${RELEASE_VERSION}"
 
 echo "🚀 Starting production build..."

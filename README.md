@@ -9,8 +9,8 @@ OpenAD 是一款面向 Windows 的 IT 运维桌面应用，用于统一查看 Ac
 直接授权还是嵌套组关系，以及具体原因是什么。
 
 当前版本支持简体中文和英文，对 Active Directory 保持只读，并以 .NET WebView2
-桌面应用形式交付，后端使用 Go API，产品界面使用 Next.js。`PermissionProtector`
-暂时保留在部分二进制文件、命名空间和本地数据路径中，仅用于兼容。
+桌面应用形式交付，后端使用 Go API，产品界面使用 Next.js。发布文件统一使用 OpenAD；
+`PermissionProtector` 仅保留在内部命名空间、兼容环境变量和旧数据迁移路径中。
 
 ## 功能模块
 
@@ -69,7 +69,7 @@ tools                  已忽略的便携 Go/Node 工具链
 ```powershell
 $env:GOCACHE = Join-Path $PWD '.gocache'
 $env:GOMODCACHE = Join-Path $PWD '.gomodcache'
-$env:PERMISSION_PROTECTOR_DATA_DIR = "$env:APPDATA\PermissionProtector"
+$env:PERMISSION_PROTECTOR_DATA_DIR = "$env:APPDATA\OpenAD"
 & .\tools\go\bin\go.exe -C .\apps\backend run ./cmd/api
 ```
 
@@ -112,7 +112,7 @@ OpenAD 采用 open core 双许可结构。除 `ee/` 和另有自身许可声明�
 
 OpenAD is a Windows-first IT operations desktop application for reviewing Active Directory identities together with NTFS and network-share permissions. It helps operators determine which users or groups can access a resource, whether that access is direct or inherited through nested groups, and why the permission is effective.
 
-The current release supports Simplified Chinese and English, keeps Active Directory operations read-only, and ships as a .NET WebView2 desktop application backed by a Go API and a Next.js interface. `PermissionProtector` remains in selected binary names, namespaces, and local data paths only for compatibility.
+The current release supports Simplified Chinese and English, keeps Active Directory operations read-only, and ships as a .NET WebView2 desktop application backed by a Go API and a Next.js interface. Release files use OpenAD; `PermissionProtector` remains only in internal namespaces, compatibility environment variables, and legacy data migration paths.
 
 ### Product Modules
 
@@ -164,7 +164,7 @@ Quick backend start:
 ```powershell
 $env:GOCACHE = Join-Path $PWD '.gocache'
 $env:GOMODCACHE = Join-Path $PWD '.gomodcache'
-$env:PERMISSION_PROTECTOR_DATA_DIR = "$env:APPDATA\PermissionProtector"
+$env:PERMISSION_PROTECTOR_DATA_DIR = "$env:APPDATA\OpenAD"
 & .\tools\go\bin\go.exe -C .\apps\backend run ./cmd/api
 ```
 
