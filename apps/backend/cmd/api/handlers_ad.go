@@ -151,6 +151,17 @@ func (application *application) handleADUserQueryAsync(context *gin.Context) {
 }
 
 func (application *application) runADUserQueryJob(jobID string, request ADUserAsyncQueryRequest) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			adQueryJobs.Update(jobID, func(job *adQueryJob) {
+				job.Status = "failed"
+				job.Progress = 100
+				job.Error = fmt.Sprintf("AD query worker panic: %v", recovered)
+				job.UpdatedAt = time.Now().UTC()
+			})
+		}
+	}()
+
 	adQueryJobs.Update(jobID, func(job *adQueryJob) {
 		if job.CancelRequested {
 			job.Status = "cancelled"

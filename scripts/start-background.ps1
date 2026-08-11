@@ -12,10 +12,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$allInterfaceHosts = @('0.0.0.0', '*', '+')
-$lanBinding = $allInterfaceHosts -contains $ApiHost.Trim() -or $allInterfaceHosts -contains $WebHost.Trim()
-if ($lanBinding) {
-    Write-Warning 'OpenAD is listening on all network interfaces without product login or RBAC. Use only on a trusted administration network.'
+foreach ($hostValue in @($ApiHost, $WebHost)) {
+    if ($hostValue.Trim() -ne '127.0.0.1') {
+        throw 'LAN binding is disabled for the packaged OpenAD desktop launcher. Use 127.0.0.1.'
+    }
 }
 
 function Assert-File([string]$Path, [string]$Label) {

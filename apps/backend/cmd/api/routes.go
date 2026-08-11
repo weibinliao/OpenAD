@@ -58,6 +58,7 @@ func (application *application) router() *gin.Engine {
 	router.GET("/api/audit/requests/:request_id", application.handleGetAuditRequest)
 	router.GET("/api/fs/directories", application.handleListDirectories)
 	router.GET("/api/sessions", application.handleListSessions)
+	router.DELETE("/api/sessions", application.handleDeleteSessions)
 	router.GET("/api/sessions/:id", application.handleGetSession)
 	router.GET("/api/sessions/:id/bundle", application.handleGetSessionBundle)
 	router.GET("/api/sessions/:id/permissions", application.handleListSessionPermissions)

@@ -1,7 +1,7 @@
 ﻿param(
     [string]$Configuration = 'Release',
     [string]$RuntimeIdentifier = 'win-x64',
-    [string]$Version = '1.0.0',
+    [string]$Version = '1.0.1',
     [switch]$SelfContained
 )
 
@@ -53,9 +53,9 @@ $env:GOMODCACHE = Join-Path $rootDir '.gomodcache'
 Invoke-Step 'Building Go backend services...' {
     Push-Location (Join-Path $rootDir 'apps\backend')
     try {
-        & $goExe test ./...
+        & $goExe test -tags openad_desktop ./...
         if ($LASTEXITCODE -ne 0) { throw 'go test failed' }
-        $goBuildArgs = @('-trimpath', '-buildvcs=false', '-ldflags', '-s -w')
+        $goBuildArgs = @('-trimpath', '-buildvcs=false', '-tags', 'openad_desktop', '-ldflags', '-s -w')
         & $goExe build @goBuildArgs -o (Join-Path $releaseDir 'OpenAD.Server.exe') .\cmd\api
         if ($LASTEXITCODE -ne 0) { throw 'go api build failed' }
         & $goExe build @goBuildArgs -o (Join-Path $releaseDir 'OpenAD.CLI.exe') .\cmd\cli
@@ -70,7 +70,9 @@ Invoke-Step 'Building Go backend services...' {
 
 Invoke-Step 'Building static web console...' {
     Push-Location (Join-Path $rootDir 'apps\web')
+    $previousOpenADVersion = $env:NEXT_PUBLIC_OPENAD_VERSION
     try {
+        $env:NEXT_PUBLIC_OPENAD_VERSION = $Version
         & $npmCmd run typecheck
         if ($LASTEXITCODE -ne 0) { throw 'web typecheck failed' }
         & $npmCmd test
@@ -79,6 +81,12 @@ Invoke-Step 'Building static web console...' {
         if ($LASTEXITCODE -ne 0) { throw 'web static build failed' }
     }
     finally {
+        if ($null -eq $previousOpenADVersion) {
+            Remove-Item Env:NEXT_PUBLIC_OPENAD_VERSION -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:NEXT_PUBLIC_OPENAD_VERSION = $previousOpenADVersion
+        }
         Pop-Location
     }
 }
@@ -111,7 +119,7 @@ Invoke-Step 'Publishing Windows desktop shell...' {
 }
 
 Invoke-Step 'Copying fallback launch scripts and desktop notes...' {
-    foreach ($file in @('start-windows.bat', 'stop-windows.bat', 'verify-install.bat', 'start-background.bat', 'start-background.ps1', 'backup-data.bat')) {
+    foreach ($file in @('start-windows.bat', 'stop-windows.bat', 'verify-install.bat', 'start-background.bat', 'start-background.ps1', 'disable-lan-access.bat', 'backup-data.bat')) {
         $source = Join-Path $rootDir "scripts\$file"
         if (Test-Path -LiteralPath $source -PathType Leaf) {
             Copy-Item -LiteralPath $source -Destination $releaseDir -Force

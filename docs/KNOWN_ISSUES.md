@@ -25,10 +25,10 @@
 6. API 尚未实现产品级登录或 RBAC。
    - API、静态 Web、开发 Web 和 Windows 浏览器模式启动器默认只监听 `127.0.0.1`；空 `ALLOW_ORIGINS` 只允许 `localhost`、回环 IP 上的 `3010` 和 `43110` Web 来源，显式 `ALLOW_ORIGINS=*` 仍受支持。
    - 浏览器连接 `/api/scan/ws` 时只接受同源、`localhost`、回环 IP，或运维显式配置的额外来源；无 `Origin` 头的连接按非浏览器客户端处理并继续放行。
-   - LAN Web 部署可通过 `WEBSOCKET_ALLOWED_ORIGINS` 添加逗号、分号或换行分隔的精确 `http(s)://host[:port]` 来源；未设置时回退读取兼容变量 `FSA_WEBSOCKET_ALLOWED_ORIGINS`。
+   - 非桌面服务端或开发构建的 LAN Web 部署可通过 `WEBSOCKET_ALLOWED_ORIGINS` 添加逗号、分号或换行分隔的精确 `http(s)://host[:port]` 来源；未设置时回退读取兼容变量 `FSA_WEBSOCKET_ALLOWED_ORIGINS`。正式 Windows 桌面包不读取局域网绑定配置。
    - Origin 校验不能替代身份认证，也不限制无 `Origin` 的非浏览器客户端。
    - 开发端口 `3010`、桌面 Web 端口 `43110` 和 API 端口 `18080` 只能放在可信管理网络。
-   - LAN 暴露必须是运维人员明确执行的决定：以管理员身份运行 `scripts\enable-lan-access.bat` 添加防火墙规则，再替换并执行脚本打印的一次性 LAN 启动命令；脚本不会持久化全网卡绑定。
+   - 当前正式 Windows 桌面包不支持 LAN Web 部署，启动器强制使用 `127.0.0.1`。旧版本可能留下持久化防火墙规则，请以管理员身份运行 `scripts\disable-lan-access.bat` 清理。
 
 7. OpenAD 当前不是持续性 AD 威胁检测平台。
    - 实时事件监控、SIEM 集成、攻击路径图和自动响应不是当前支持能力。
@@ -66,7 +66,7 @@
    `SECURITY.md` is still an inactive placeholder, and the status of GitHub Private Vulnerability
    Reporting is not confirmed. There is no SLA, supported-version window, or verified private channel
    for external vulnerability reports.
-6. The API does not yet provide product-level login or RBAC. The API, static Web server, development Web server, and Windows browser-mode launchers bind only to `127.0.0.1` by default. With an empty `ALLOW_ORIGINS`, only local `localhost` or loopback-IP Web origins on ports `3010` and `43110` are allowed; explicit `ALLOW_ORIGINS=*` remains supported. Browser connections to `/api/scan/ws` accept only same-origin, `localhost`, loopback-IP, or explicitly configured origins; connections without an `Origin` header are treated as non-browser clients and remain allowed. LAN Web deployments can add exact, comma-, semicolon-, or newline-separated `http(s)://host[:port]` origins through `WEBSOCKET_ALLOWED_ORIGINS`, with `FSA_WEBSOCKET_ALLOWED_ORIGINS` as the compatibility fallback. Origin validation is not authentication and does not restrict non-browser clients without `Origin`. Development port `3010`, packaged Web port `43110`, and API port `18080` must remain on a trusted administration network. LAN exposure requires an explicit operator decision: run `scripts\enable-lan-access.bat` as Administrator to add firewall rules, then replace and execute its printed one-time LAN launch command. The script does not persist an all-interface binding.
+6. The API does not yet provide product-level login or RBAC. In non-desktop server or development builds, LAN Web deployments can add exact origins through `WEBSOCKET_ALLOWED_ORIGINS` (with `FSA_WEBSOCKET_ALLOWED_ORIGINS` as the compatibility fallback). The supported Windows desktop package ignores LAN binding configuration and its launchers bind only to `127.0.0.1`. With an empty `ALLOW_ORIGINS`, only local `localhost` or loopback-IP Web origins on ports `3010` and `43110` are allowed. Browser connections to `/api/scan/ws` accept only same-origin, `localhost`, loopback-IP, or explicitly configured origins; connections without an `Origin` header are treated as non-browser clients and remain allowed. Origin validation is not authentication. LAN browser deployment is not supported by the shipping desktop package; run `scripts\\disable-lan-access.bat` as Administrator if an older release left firewall rules behind.
 7. OpenAD is not currently a continuous AD threat-detection platform. Real-time event monitoring, SIEM integration, attack-path graphs, and automated response are not supported.
 8. File-access activity depends on Windows auditing. Object-access auditing, a target SACL, and security-event-log read access are required. The readiness check diagnoses configuration but does not modify audit policy or SACLs.
 9. Server-side export can write only under the configured export directory. `PERMISSION_PROTECTOR_EXPORT_DIR` changes the default. JSON request bodies for `/api/export`, `/api/export/download`, and `/api/export/summary` are limited to 64 MiB; narrow the scan scope or export in smaller batches when the limit is exceeded. Reports, identities, and paths may contain sensitive information.

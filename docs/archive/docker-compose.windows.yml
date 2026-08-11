@@ -1,16 +1,19 @@
+# 历史部署配置，已归档，不属于当前 OpenAD 交付路径。
+# Archived deployment configuration. It is not supported by the current OpenAD release.
+# The original file is retained here for historical reference only.
+
 version: '3.8'
 
 services:
   permission-protector:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile.windows
     ports:
       - "3000:3000"
       - "8080:8080"
     volumes:
       - type: bind
-        # Set OPENAD_SCAN_ROOT to one folder or share that the container may scan.
         source: "${OPENAD_SCAN_ROOT:?Set OPENAD_SCAN_ROOT to the folder to scan}"
         target: C:\host
         read_only: true
@@ -18,16 +21,15 @@ services:
       - DATABASE_URL=sqlite:///app/data/OpenAD.db
     restart: unless-stopped
 
-  # Alternative Linux-based service for cross-platform
   analyzer-linux:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     ports:
       - "3001:3000"
       - "8081:8080"
     volumes:
-      - ./data:/app/data
+      - ../../data:/app/data
     environment:
       - DATABASE_URL=sqlite:///app/data/OpenAD.db
     restart: unless-stopped

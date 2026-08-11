@@ -2,7 +2,7 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ScanCompletionSummary from '../components/ScanCompletionSummary';
-import ScanExplorerConsole from '../components/ScanExplorerConsole';
+import ScanExplorerConsole, { type ServerBatchProgress } from '../components/ScanExplorerConsole';
 import { useADConnection } from '../contexts/ADConnectionContext';
 import { useI18n } from '../contexts/I18nContext';
 import { upsertRiskFindingsFromScan } from '../lib/riskFindings';
@@ -90,6 +90,14 @@ interface LiveScanState {
   error: string;
 }
 
+interface ScanRunOutcome {
+  ok: boolean;
+  cancelled?: boolean;
+  path: string;
+  sessionID?: string;
+  error?: string;
+}
+
 
 function text(locale: string, en: string, zh: string) {
   return locale === 'zh-CN' ? zh : en;
@@ -127,6 +135,14 @@ function buildScanID() {
   return `scan-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// During a discovered-share batch, the ref is updated before the live UI state.
+// Prefer it so cancel never targets the previous share during that handoff.
+export function resolveCancelScanID(activeScanID: string, liveScanID: string, sessionID: string) {
+  return [activeScanID, liveScanID, sessionID]
+    .map((value) => value.trim())
+    .find(Boolean) || '';
+}
+
 export default function ScanWorkspacePage() {
   const router = useRouter();
   const { locale, t } = useI18n();
@@ -158,7 +174,10 @@ export default function ScanWorkspacePage() {
     liveConnected: false,
     error: '',
   });
+  const [serverBatch, setServerBatch] = useState<ServerBatchProgress | null>(null);
   const scanSocketRef = useRef<WebSocket | null>(null);
+  const serverBatchCancelledRef = useRef(false);
+  const activeScanIDRef = useRef('');
 
   const normalizedPath = normalizePath(path);
   const inlineADReady = Boolean(
@@ -209,9 +228,13 @@ export default function ScanWorkspacePage() {
     ));
   }, [locale, router.query.watch]);
 
-  const closeScanSocket = () => {
-    if (scanSocketRef.current) {
-      scanSocketRef.current.close();
+  const closeScanSocket = (expectedScanID?: string) => {
+    const socket = scanSocketRef.current;
+    if (socket) {
+      if (expectedScanID && !socket.url.includes(`scan_id=${encodeURIComponent(expectedScanID)}`)) {
+        return;
+      }
+      socket.close();
       scanSocketRef.current = null;
     }
   };
@@ -295,7 +318,16 @@ export default function ScanWorkspacePage() {
   }, [loading, path, progressTrackedPath]);
 
   const cancelCurrentScan = async () => {
-    const activeScanID = (liveScan.scanID || sessionID).trim();
+    if (serverBatch?.active) {
+      serverBatchCancelledRef.current = true;
+      setMessage(text(
+        locale,
+        'Stop requested. The current share will stop, and no additional discovered shares will start.',
+        '已请求停止：当前共享会安全结束，后续已发现共享不会再启动扫描。',
+      ));
+    }
+
+    const activeScanID = resolveCancelScanID(activeScanIDRef.current, liveScan.scanID, sessionID);
     if (!activeScanID || cancelPending) {
       return;
     }
@@ -328,13 +360,14 @@ export default function ScanWorkspacePage() {
     }
   };
 
-  const runScan = async (pathOverride?: string) => {
+  const runScan = async (pathOverride?: string): Promise<ScanRunOutcome> => {
     const requestedPath = normalizePath(pathOverride ?? path);
     const requestedIsUNC = isUNCPath(requestedPath);
 
     if (!requestedPath) {
-      setError(text(locale, 'Path is required.', '必须填写扫描路径。'));
-      return;
+      const nextError = text(locale, 'Path is required.', '必须填写扫描路径。');
+      setError(nextError);
+      return { ok: false, path: requestedPath, error: nextError };
     }
 
     if (requestedPath !== normalizedPath) {
@@ -342,6 +375,7 @@ export default function ScanWorkspacePage() {
     }
 
     const scanID = buildScanID();
+    activeScanIDRef.current = scanID;
     setLoading(true);
     setCancelPending(false);
     setError('');
@@ -463,9 +497,12 @@ export default function ScanWorkspacePage() {
 
     try {
       const data = await executeScan();
+      if (activeScanIDRef.current === scanID) {
+        activeScanIDRef.current = '';
+      }
       if (data.status === 'cancelled') {
         applyCancelledState();
-        return;
+        return { ok: false, cancelled: true, path: requestedPath };
       }
 
       const usedFallbackMode = data.identity_resolution?.mode === 'raw-fallback';
@@ -547,6 +584,7 @@ export default function ScanWorkspacePage() {
           workspaceSettings.auditLogging,
         );
       }
+      return { ok: true, path: requestedPath, sessionID: data.session_id || '' };
     } catch (requestError) {
       const nextError = requestError instanceof Error ? requestError.message : 'Scan failed';
       setError(nextError);
@@ -566,11 +604,132 @@ export default function ScanWorkspacePage() {
         },
         workspaceSettings.auditLogging,
       );
+      return { ok: false, path: requestedPath, error: nextError };
     } finally {
+      if (activeScanIDRef.current === scanID) {
+        activeScanIDRef.current = '';
+      }
       setLoading(false);
       setCancelPending(false);
-      window.setTimeout(() => closeScanSocket(), 1200);
+      window.setTimeout(() => closeScanSocket(scanID), 1200);
     }
+  };
+
+  const runDiscoveredShares = async (serverPath: string, sharePaths: string[]) => {
+    const normalizedServerPath = normalizePath(serverPath);
+    const shares = Array.from(new Set(
+      sharePaths
+        .map((sharePath) => normalizePath(sharePath))
+        .filter((sharePath) => isUNCPath(sharePath)),
+    ));
+    if (!normalizedServerPath || shares.length === 0 || loading || serverBatch?.active) {
+      return;
+    }
+
+    serverBatchCancelledRef.current = false;
+    let completed = 0;
+    let failed = 0;
+    let stopped = false;
+    const failedPaths: string[] = [];
+    setError('');
+    setResults([]);
+    setSkippedItems([]);
+    setIdentityResolution(null);
+    setServerBatch({
+      serverPath: normalizedServerPath,
+      total: shares.length,
+      completed,
+      failed,
+      currentPath: '',
+      active: true,
+    });
+
+    for (const sharePath of shares) {
+      if (serverBatchCancelledRef.current) {
+        stopped = true;
+        break;
+      }
+
+      setServerBatch({
+        serverPath: normalizedServerPath,
+        total: shares.length,
+        completed,
+        failed,
+        currentPath: sharePath,
+        active: true,
+      });
+      const outcome = await runScan(sharePath);
+      if (outcome.ok) {
+        completed++;
+      } else if (outcome.cancelled || serverBatchCancelledRef.current) {
+        stopped = true;
+        break;
+      } else {
+        failed++;
+        failedPaths.push(sharePath);
+      }
+      setServerBatch({
+        serverPath: normalizedServerPath,
+        total: shares.length,
+        completed,
+        failed,
+        currentPath: '',
+        active: true,
+      });
+    }
+
+    if (serverBatchCancelledRef.current) {
+      stopped = true;
+    }
+    setPath(normalizedServerPath);
+    setProgressTrackedPath(normalizedServerPath);
+    setResults([]);
+    setSkippedItems([]);
+    setSessionID('');
+    setItemsScanned(0);
+    setIdentityResolution(null);
+    setLiveScan({
+      scanID: '',
+      sessionID: '',
+      status: stopped ? 'cancelled' : 'completed',
+      currentPath: normalizedServerPath,
+      itemsScanned: 0,
+      permissionCount: 0,
+      startedAt: 0,
+      lastUpdatedAt: Date.now(),
+      liveConnected: false,
+      error: '',
+    });
+    setServerBatch({
+      serverPath: normalizedServerPath,
+      total: shares.length,
+      completed,
+      failed,
+      currentPath: '',
+      active: false,
+    });
+
+    const failureDetail = failedPaths.length > 0 ? ` ${failedPaths.join(', ')}` : '';
+    setMessage(stopped
+      ? text(
+        locale,
+        `Server batch stopped after ${completed} of ${shares.length} shares. Completed snapshots remain available for access analysis.`,
+        `服务器批量扫描已停止，已完成 ${completed}/${shares.length} 个共享；已完成共享的快照仍可用于访问分析。`,
+      )
+      : text(
+        locale,
+        `Server batch completed: ${completed}/${shares.length} shares scanned, ${failed} failed. Analyze a user with scope ${normalizedServerPath}.${failureDetail}`,
+        `服务器批量扫描完成：已扫描 ${completed}/${shares.length} 个共享，失败 ${failed} 个。可在“访问分析 > 按用户”中填写范围 ${normalizedServerPath}。${failureDetail}`,
+      ));
+    appendOperationLog(
+      {
+        scope: 'scan',
+        action: stopped ? 'run-server-batch-cancelled' : 'run-server-batch',
+        message: stopped ? 'Server batch scan stopped.' : 'Server batch scan completed.',
+        context: { serverPath: normalizedServerPath, total: shares.length, completed, failed, stopped },
+      },
+      workspaceSettings.auditLogging,
+    );
   };
 
   const scanStageNote = results.length > 0
@@ -643,7 +802,9 @@ export default function ScanWorkspacePage() {
               includeInherited: value,
             }))}
             onScan={(nextPath) => void runScan(nextPath)}
+            onScanDiscoveredShares={(serverPath, sharePaths) => void runDiscoveredShares(serverPath, sharePaths)}
             onCancelScan={() => void cancelCurrentScan()}
+            serverBatch={serverBatch}
           />
         </section>
 

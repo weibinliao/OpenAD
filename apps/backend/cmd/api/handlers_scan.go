@@ -152,6 +152,13 @@ func (application *application) handleScan(ctx *gin.Context) {
 	scanFinished := make(chan struct{})
 
 	go func() {
+		defer close(scanFinished)
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				errorChannel <- fmt.Errorf("scan worker panic: %v", recovered)
+			}
+		}()
+
 		result, err := application.scans.Run(scanservice.Request{
 			ScanID:                             scanID,
 			Path:                               request.Path,
@@ -161,7 +168,6 @@ func (application *application) handleScan(ctx *gin.Context) {
 			Context:                            scanContext,
 			EffectivePermissionExpanderFactory: expanderFactory,
 		})
-		close(scanFinished)
 		if err != nil {
 			errorChannel <- err
 			return

@@ -2,7 +2,7 @@
 param(
     [string]$Configuration = 'Release',
     [string]$RuntimeIdentifier = 'win-x64',
-    [string]$Version = '1.0.0',
+    [string]$Version = '1.0.1',
     [string]$InnoCompiler,
     [switch]$SkipDesktopBuild
 )

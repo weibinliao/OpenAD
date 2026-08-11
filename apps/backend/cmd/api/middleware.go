@@ -477,37 +477,34 @@ func requestIDMiddleware() gin.HandlerFunc {
 }
 
 func endpointProtectionMiddleware() gin.HandlerFunc {
-	protectedPostPaths := map[string]struct{}{
-		"/api/scan":                          {},
-		"/api/scan/:id/cancel":               {},
-		"/api/ad/users/query":                {},
-		"/api/ad/users/query/async":          {},
-		"/api/ad/groups/query":               {},
-		"/api/ad/groups/members":             {},
-		"/api/ad/groups/members/export":      {},
-		"/api/ad/tree":                       {},
-		"/api/ad/tree/explain":               {},
-		"/api/ad/jobs/:id/retry":             {},
-		"/api/ad/jobs/:id/cancel":            {},
-		"/api/audit/requests/export/summary": {},
-		"/api/file-activity/events/query":    {},
-		"/api/export/download":               {},
-		"/api/export/summary":                {},
-		"/api/risk-findings/upsert":          {},
-		"/api/risk-findings/import":          {},
+	protectedEndpoints := map[string]struct{}{
+		http.MethodPost + " /api/scan":                          {},
+		http.MethodPost + " /api/scan/:id/cancel":               {},
+		http.MethodPost + " /api/ad/users/query":                {},
+		http.MethodPost + " /api/ad/users/query/async":          {},
+		http.MethodPost + " /api/ad/groups/query":               {},
+		http.MethodPost + " /api/ad/groups/members":             {},
+		http.MethodPost + " /api/ad/groups/members/export":      {},
+		http.MethodPost + " /api/ad/tree":                       {},
+		http.MethodPost + " /api/ad/tree/explain":               {},
+		http.MethodPost + " /api/ad/jobs/:id/retry":             {},
+		http.MethodPost + " /api/ad/jobs/:id/cancel":            {},
+		http.MethodPost + " /api/audit/requests/export/summary": {},
+		http.MethodPost + " /api/file-activity/events/query":    {},
+		http.MethodPost + " /api/export/download":               {},
+		http.MethodPost + " /api/export/summary":                {},
+		http.MethodPost + " /api/risk-findings/upsert":          {},
+		http.MethodPost + " /api/risk-findings/import":          {},
+		http.MethodDelete + " /api/sessions":                    {},
 	}
 
 	return func(context *gin.Context) {
-		if context.Request.Method != http.MethodPost {
-			context.Next()
-			return
-		}
-
 		path := context.FullPath()
 		if path == "" {
 			path = context.Request.URL.Path
 		}
-		if _, exists := protectedPostPaths[path]; !exists {
+		endpoint := context.Request.Method + " " + path
+		if _, exists := protectedEndpoints[endpoint]; !exists {
 			context.Next()
 			return
 		}
@@ -516,7 +513,7 @@ func endpointProtectionMiddleware() gin.HandlerFunc {
 		if clientKey == "" {
 			clientKey = "unknown"
 		}
-		if !endpointLimiter.Allow(clientKey + "::" + path) {
+		if !endpointLimiter.Allow(clientKey + "::" + endpoint) {
 			context.JSON(http.StatusTooManyRequests, gin.H{
 				"error": "rate limit exceeded",
 				"path":  path,

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/weibinliao/OpenAD/internal/ad"
 	"github.com/weibinliao/OpenAD/internal/adsync"
@@ -18,6 +20,8 @@ import (
 // adSyncStartMutex serializes the running-run check with run creation so two
 // concurrent POSTs cannot both pass the single-active-run guard.
 var adSyncStartMutex sync.Mutex
+
+const directorySyncTimeout = 30 * time.Minute
 
 type directorySyncRequest struct {
 	ConnectionID string `json:"connection_id" binding:"required"`
@@ -95,16 +99,28 @@ func (application *application) handleStartDirectorySync(context *gin.Context) {
 }
 
 func runDirectorySync(service *adsync.Service, runID uuid.UUID, credentials *connections.ResolvedCredentials) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if err := service.MarkRunFailed(runID, fmt.Sprintf("directory sync worker panic: %v", recovered)); err != nil {
+				log.Printf("failed to mark directory sync %s after panic: %v", runID, err)
+			}
+		}
+	}()
+
 	client, err := ad.NewADClient(credentials.Server, credentials.BaseDN, credentials.BindUser, credentials.Password)
 	if err != nil {
-		service.MarkRunFailed(runID, fmt.Sprintf("failed to connect to Active Directory: %v", err))
+		if markErr := service.MarkRunFailed(runID, fmt.Sprintf("failed to connect to Active Directory: %v", err)); markErr != nil {
+			log.Printf("failed to mark directory sync %s as failed: %v", runID, markErr)
+		}
 		return
 	}
 	defer client.Close()
 
-	// Run updates the row to completed/failed itself; the error is already
-	// recorded, and there is no request left to report it to.
-	_ = service.Run(context.Background(), runID, client)
+	ctx, cancel := context.WithTimeout(context.Background(), directorySyncTimeout)
+	defer cancel()
+	if err := service.Run(ctx, runID, client); err != nil {
+		log.Printf("directory sync %s failed: %v", runID, err)
+	}
 }
 
 func (application *application) handleListDirectorySyncRuns(context *gin.Context) {

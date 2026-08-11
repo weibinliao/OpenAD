@@ -270,6 +270,74 @@ func TestByUserUsesLatestCompletedSessionPerRoot(t *testing.T) {
 	}
 }
 
+func TestByUserLimitsResultsToUNCServerScope(t *testing.T) {
+	db := newTestDB(t)
+	seedFixture(t, db)
+	now := time.Now().UTC()
+
+	sessions := []models.ScanSession{
+		{RootPath: `\\filesrv\Finance`, Status: "completed", MaxDepth: -1, StartedAt: now},
+		{RootPath: `\\filesrv\HR`, Status: "completed", MaxDepth: 2, StartedAt: now.Add(time.Minute)},
+		{RootPath: `\\othersrv\Finance`, Status: "completed", StartedAt: now.Add(2 * time.Minute)},
+	}
+	if err := db.Create(&sessions).Error; err != nil {
+		t.Fatalf("seed UNC sessions: %v", err)
+	}
+	if err := db.Create(&[]models.Permission{
+		{ScanSessionID: sessions[0].ID, Path: `\\filesrv\Finance`, Trustee: `EXAMPLE\alice`, TrusteeSID: aliceSID, Rights: "Read", Type: "allow"},
+		{ScanSessionID: sessions[1].ID, Path: `\\filesrv\HR\Payroll`, Trustee: `EXAMPLE\alice`, TrusteeSID: aliceSID, Rights: "Modify", Type: "allow"},
+		{ScanSessionID: sessions[2].ID, Path: `\\othersrv\Finance`, Trustee: `EXAMPLE\alice`, TrusteeSID: aliceSID, Rights: "FullControl", Type: "allow"},
+	}).Error; err != nil {
+		t.Fatalf("seed UNC permissions: %v", err)
+	}
+	failed := models.ScanSession{
+		RootPath:     `\\filesrv\Payroll`,
+		Status:       "failed",
+		MaxDepth:     -1,
+		ErrorMessage: "access denied",
+		StartedAt:    now.Add(3 * time.Minute),
+	}
+	if err := db.Create(&failed).Error; err != nil {
+		t.Fatalf("seed failed UNC session: %v", err)
+	}
+
+	result, err := NewService(db).ByUser(ByUserInput{
+		Principal:  "alice",
+		PathPrefix: `\\filesrv`,
+	})
+	if err != nil {
+		t.Fatalf("ByUser server scope: %v", err)
+	}
+
+	if result.PathPrefix != `\\filesrv` {
+		t.Fatalf("path prefix = %q, want \\filesrv", result.PathPrefix)
+	}
+	if len(result.Sessions) != 2 || len(result.ByRootPath) != 2 || len(result.Entries) != 2 {
+		t.Fatalf("server-scope result should include only two filesrv shares: %+v", result)
+	}
+	if result.ScanCoverage == nil {
+		t.Fatal("server-scope result should include scan coverage")
+	}
+	if result.ScanCoverage.Total != 3 || result.ScanCoverage.Completed != 2 || result.ScanCoverage.Failed != 1 {
+		t.Fatalf("scan coverage = %+v, want 3 total / 2 completed / 1 failed", result.ScanCoverage)
+	}
+	var failedCoverage *SessionInfo
+	for index := range result.ScanCoverage.Sessions {
+		if result.ScanCoverage.Sessions[index].RootPath == `\\filesrv\Payroll` {
+			failedCoverage = &result.ScanCoverage.Sessions[index]
+			break
+		}
+	}
+	if failedCoverage == nil || failedCoverage.Status != "failed" || failedCoverage.ErrorMessage != "access denied" {
+		t.Fatalf("failed coverage record = %+v", failedCoverage)
+	}
+	for _, entry := range result.Entries {
+		if !strings.HasPrefix(strings.ToLower(entry.Path), `\\filesrv\`) {
+			t.Fatalf("out-of-scope entry returned: %+v", entry)
+		}
+	}
+}
+
 func TestByUserErrors(t *testing.T) {
 	db := newTestDB(t)
 	service := NewService(db)
@@ -484,6 +552,9 @@ func TestByResourceErrors(t *testing.T) {
 	}
 
 	seedFixture(t, db)
+	if _, err := service.ByResource(ByResourceInput{PathPrefix: `\\filesrv`}); !errors.Is(err, ErrUNCServerRootRequiresShare) {
+		t.Fatalf("server-root resource analysis error = %v, want ErrUNCServerRootRequiresShare", err)
+	}
 	if _, err := service.ByResource(ByResourceInput{PathPrefix: `Z:\Elsewhere`}); !errors.Is(err, ErrNoMatchingSession) {
 		t.Fatalf("uncovered path error = %v, want ErrNoMatchingSession", err)
 	}

@@ -3,12 +3,15 @@ import { type ChangeEvent, type ComponentType, type FormEvent, useEffect, useMem
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
+  ExternalLink,
   Languages,
   Monitor,
   Moon,
   Pencil,
   Plug,
   Plus,
+  RefreshCw,
   RotateCcw,
   Save,
   Star,
@@ -23,6 +26,13 @@ import { useI18n } from '../contexts/I18nContext';
 import { useThemeContext } from '../contexts/ThemeContext';
 import { useADConnection, type ConnectionProfile } from '../contexts/ADConnectionContext';
 import { apiBase } from '../lib/runtimeApi';
+import {
+  hasDesktopUpdateBridge,
+  openOpenADReleasePage,
+  sendDesktopUpdateRequest,
+  subscribeToDesktopUpdates,
+  type DesktopUpdateMessage,
+} from '../lib/desktopUpdate';
 import {
   buildWorkspacePageTitle,
   defaultWorkspaceSettings,
@@ -73,6 +83,21 @@ const emptyConnectionForm: ConnectionFormState = {
 };
 
 type WorkspaceIdentityDraft = Pick<WorkspaceSettings, 'workspaceLabel' | 'workspaceTagline'>;
+
+type UpdateStatus = 'idle' | 'checking' | 'current' | 'available' | 'installing' | 'error' | 'browser';
+
+interface UpdateViewState {
+  status: UpdateStatus;
+  currentVersion: string;
+  latestVersion: string;
+  releaseName: string;
+  releaseNotes: string;
+  publishedAt: string;
+  releaseUrl: string;
+  error: string;
+}
+
+const bundledVersion = (process.env.NEXT_PUBLIC_OPENAD_VERSION || '1.0.1').trim();
 
 function createWorkspaceIdentityDraft(value: WorkspaceSettings): WorkspaceIdentityDraft {
   return {
@@ -134,6 +159,94 @@ export default function SettingsPage() {
     activeProfile,
     clearConnection,
   } = useADConnection();
+
+  // ---------------------------------------------------------------- application updates
+  const [updateState, setUpdateState] = useState<UpdateViewState>({
+    status: 'idle',
+    currentVersion: bundledVersion,
+    latestVersion: '',
+    releaseName: '',
+    releaseNotes: '',
+    publishedAt: '',
+    releaseUrl: '',
+    error: '',
+  });
+
+  useEffect(() => {
+    const unsubscribe = subscribeToDesktopUpdates((message: DesktopUpdateMessage) => {
+      if (!message.ok) {
+        setUpdateState((prev) => ({
+          ...prev,
+          status: 'error',
+          currentVersion: message.currentVersion || prev.currentVersion,
+          error: message.error || d.settings.updateCheckFailed,
+        }));
+        return;
+      }
+
+      if (message.action === 'status-result') {
+        setUpdateState((prev) => ({
+          ...prev,
+          currentVersion: message.currentVersion || prev.currentVersion,
+        }));
+        return;
+      }
+
+      if (message.action === 'check-result') {
+        setUpdateState((prev) => ({
+          ...prev,
+          status: message.updateAvailable ? 'available' : 'current',
+          currentVersion: message.currentVersion || prev.currentVersion,
+          latestVersion: message.latestVersion || '',
+          releaseName: message.releaseName || '',
+          releaseNotes: message.releaseNotes || '',
+          publishedAt: message.publishedAt || '',
+          releaseUrl: message.releaseUrl || '',
+          error: '',
+        }));
+        return;
+      }
+
+      if (message.action === 'install-result' && !message.launched) {
+        setUpdateState((prev) => ({
+          ...prev,
+          status: 'current',
+          latestVersion: message.latestVersion || prev.latestVersion,
+          error: '',
+        }));
+      }
+    });
+
+    if (hasDesktopUpdateBridge()) {
+      sendDesktopUpdateRequest('status');
+    }
+    return unsubscribe;
+  }, [d.settings.updateCheckFailed]);
+
+  const checkForUpdates = () => {
+    if (!hasDesktopUpdateBridge()) {
+      openOpenADReleasePage();
+      setUpdateState((prev) => ({ ...prev, status: 'browser', error: '' }));
+      return;
+    }
+
+    setUpdateState((prev) => ({ ...prev, status: 'checking', error: '' }));
+    if (!sendDesktopUpdateRequest('check')) {
+      setUpdateState((prev) => ({ ...prev, status: 'error', error: d.settings.updateBridgeUnavailable }));
+    }
+  };
+
+  const installUpdate = () => {
+    const version = updateState.latestVersion || '';
+    if (typeof window !== 'undefined' && !window.confirm(d.settings.updateInstallConfirm.replace('{version}', version))) {
+      return;
+    }
+
+    setUpdateState((prev) => ({ ...prev, status: 'installing', error: '' }));
+    if (!sendDesktopUpdateRequest('install')) {
+      setUpdateState((prev) => ({ ...prev, status: 'error', error: d.settings.updateBridgeUnavailable }));
+    }
+  };
 
   // ---------------------------------------------------------------- AD connections
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -421,6 +534,17 @@ export default function SettingsPage() {
     });
   };
 
+  const formatReleaseDate = (value: string) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
   const themeOptions: Array<{ id: ThemeMode; label: string; icon: ComponentType<{ className?: string }> }> = [
     { id: 'light', label: d.shell.themeLight, icon: Sun },
     { id: 'dark', label: d.shell.themeDark, icon: Moon },
@@ -607,6 +731,110 @@ export default function SettingsPage() {
                 </Table>
               </TableContainer>
             )}
+          </CardContent>
+        </Card>
+
+        {/* ---------------------------------------------------------- application updates */}
+        <Card>
+          <CardHeader
+            title={d.settings.updateTitle}
+            description={d.settings.updateDesc}
+            actions={
+              <Button
+                size="sm"
+                variant="outline"
+                loading={updateState.status === 'checking'}
+                onClick={checkForUpdates}
+                disabled={updateState.status === 'installing'}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                {d.settings.updateCheck}
+              </Button>
+            }
+          />
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 border-y border-line py-2.5 sm:grid-cols-2">
+              <div className="min-w-0">
+                <p className="text-2xs text-fg-muted">{d.settings.updateCurrentVersion}</p>
+                <p className="mt-1 font-mono text-sm font-semibold text-fg">v{updateState.currentVersion}</p>
+              </div>
+              {updateState.latestVersion ? (
+                <div className="min-w-0 sm:border-l sm:border-line sm:pl-3">
+                  <p className="text-2xs text-fg-muted">{d.settings.updateLatestVersion}</p>
+                  <p className="mt-1 font-mono text-sm font-semibold text-fg">v{updateState.latestVersion}</p>
+                </div>
+              ) : null}
+            </div>
+
+            {updateState.status === 'checking' ? (
+              <p className="flex items-center gap-1.5 text-xs text-fg-muted" role="status" aria-live="polite">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                {d.settings.updateChecking}
+              </p>
+            ) : null}
+            {updateState.status === 'installing' ? (
+              <p className="flex items-center gap-1.5 text-xs text-fg-muted" role="status" aria-live="polite">
+                <Download className="h-3.5 w-3.5" />
+                {d.settings.updateInstalling}
+              </p>
+            ) : null}
+            {updateState.status === 'current' ? (
+              <p className="flex items-center gap-1.5 rounded-md border border-success/40 bg-success-soft px-3 py-2 text-xs text-success" role="status" aria-live="polite">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                {d.settings.updateUpToDate}
+              </p>
+            ) : null}
+            {updateState.status === 'available' ? (
+              <div className="space-y-3 rounded-md border border-accent/40 bg-accent-soft/40 px-3 py-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-fg">
+                      {updateState.releaseName || d.settings.updateAvailable}
+                    </p>
+                    {updateState.publishedAt ? (
+                      <p className="mt-0.5 text-2xs text-fg-muted">{formatReleaseDate(updateState.publishedAt)}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={installUpdate}>
+                      <Download className="h-3.5 w-3.5" />
+                      {d.settings.updateInstall}
+                    </Button>
+                    {updateState.releaseUrl ? (
+                      <a
+                        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line bg-transparent px-2.5 text-xs font-medium text-fg hover:bg-surface-sunken"
+                        href={updateState.releaseUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        {d.settings.updateReleasePage}
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+                {updateState.releaseNotes ? (
+                  <div className="max-h-48 overflow-y-auto border-t border-line/70 pt-2 text-xs leading-5 text-fg-secondary whitespace-pre-wrap">
+                    {updateState.releaseNotes}
+                  </div>
+                ) : null}
+                <p className="text-2xs text-fg-muted">{d.settings.updatePreservesData}</p>
+              </div>
+            ) : null}
+            {updateState.status === 'browser' ? (
+              <p className="rounded-md border border-info/40 bg-info-soft px-3 py-2 text-xs text-info" role="status" aria-live="polite">
+                {d.settings.updateBrowserFallback}
+              </p>
+            ) : null}
+            {updateState.status === 'error' ? (
+              <p className="flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger" role="alert">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {updateState.error || d.settings.updateCheckFailed}
+              </p>
+            ) : null}
+            {updateState.status === 'idle' ? (
+              <p className="text-2xs text-fg-muted">{d.settings.updatePreservesData}</p>
+            ) : null}
           </CardContent>
         </Card>
 

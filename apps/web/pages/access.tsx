@@ -53,6 +53,7 @@ interface AccessEntry {
 }
 
 interface ByUserResult {
+  path_prefix?: string;
   user: {
     sid: string;
     sam_account_name: string;
@@ -64,7 +65,15 @@ interface ByUserResult {
   };
   group_count: number;
   groups: Array<{ group_sid: string; group_name: string; direct: boolean; via_chain?: string }>;
-  sessions: Array<{ id: string; root_path: string; status: string }>;
+  sessions: Array<{ id: string; root_path: string; status: string; max_depth?: number; error_message?: string }>;
+  scan_coverage?: {
+    total: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+    in_progress: number;
+    sessions: Array<{ id: string; root_path: string; status: string; max_depth?: number; error_message?: string }>;
+  };
   entries: AccessEntry[];
   by_root_path: Array<{ root_path: string; session_id: string; entries: AccessEntry[] }>;
   counts: { total: number; direct: number; via_group: number; allow: number; deny: number };
@@ -168,6 +177,26 @@ function accessLabel(template: string, values: Record<string, string | number>) 
   return Object.entries(values).reduce((label, [key, value]) => label.replace(`{${key}}`, String(value)), template);
 }
 
+function scanDepthLabel(depth: number | undefined, d: ReturnType<typeof useDict>) {
+  if (typeof depth !== 'number' || depth === 0) return d.access.depthUnknown;
+  if (depth < 0) return d.access.depthFull;
+  return accessLabel(d.access.depthLevels, { count: depth });
+}
+
+function scanStatusLabel(status: string, d: ReturnType<typeof useDict>) {
+  switch (status.toLowerCase()) {
+    case 'completed':
+      return d.access.coverageCompleted;
+    case 'failed':
+      return d.access.coverageFailed;
+    case 'cancelled':
+    case 'canceled':
+      return d.access.coverageCancelled;
+    default:
+      return d.access.coverageInProgress;
+  }
+}
+
 function WhyCell({ why, d }: { why: Why; d: ReturnType<typeof useDict> }) {
   if (why.kind === 'direct') {
     return <Badge tone="accent">{d.access.directAce}</Badge>;
@@ -192,13 +221,15 @@ function ByUserTab() {
   const { locale } = useI18n();
   const router = useRouter();
   const [principal, setPrincipal] = useState('');
+  const [scope, setScope] = useState('');
   const [result, setResult] = useState<ByUserResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const analyze = useCallback(
-    async (value?: string) => {
+    async (value?: string, scopeValue?: string) => {
       const target = (value ?? principal).trim();
+      const pathPrefix = (scopeValue ?? scope).trim();
       if (!target) return;
       setLoading(true);
       setError('');
@@ -206,7 +237,10 @@ function ByUserTab() {
         const response = await fetch(`${apiBase()}/api/access/by-user`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ principal: target }),
+          body: JSON.stringify({
+            principal: target,
+            ...(pathPrefix ? { path_prefix: pathPrefix } : {}),
+          }),
         });
         const data = (await response.json().catch(() => ({}))) as ByUserResult;
         if (!response.ok) throw new Error(data.error || d.common.error);
@@ -218,16 +252,18 @@ function ByUserTab() {
         setLoading(false);
       }
     },
-    [d, principal],
+    [d, principal, scope],
   );
 
   // Deep link ?principal=
   useEffect(() => {
     if (!router.isReady) return;
     const fromQuery = typeof router.query.principal === 'string' ? router.query.principal : '';
+    const scopeFromQuery = typeof router.query.scope === 'string' ? router.query.scope : '';
     if (fromQuery) {
       setPrincipal(fromQuery);
-      analyze(fromQuery);
+      setScope(scopeFromQuery);
+      analyze(fromQuery, scopeFromQuery);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady]);
@@ -245,6 +281,16 @@ function ByUserTab() {
           className="w-full sm:max-w-md"
           aria-label={d.access.principalPlaceholder}
         />
+        <Input
+          value={scope}
+          onChange={(event) => setScope(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') analyze();
+          }}
+          placeholder={d.access.scopePlaceholder}
+          className="w-full font-mono sm:max-w-md"
+          aria-label={d.access.scopeLabel}
+        />
         <Button onClick={() => analyze()} loading={loading} disabled={!principal.trim()} className="w-full sm:w-auto">
           <GitFork className="h-3.5 w-3.5" /> {d.access.analyze}
         </Button>
@@ -259,6 +305,30 @@ function ByUserTab() {
         </div>
       ) : result ? (
         <>
+          {result.scan_coverage ? (
+            <div className="flex flex-col gap-2 rounded-lg border border-warning/40 bg-warning-soft px-4 py-3 text-xs text-warning" role="status">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-semibold">{d.access.coverageTitle}</span>
+                <Badge tone={result.scan_coverage.failed > 0 || result.scan_coverage.cancelled > 0 ? 'warning' : 'success'}>
+                  {accessLabel(d.access.coverageSummary, { completed: result.scan_coverage.completed, total: result.scan_coverage.total })}
+                </Badge>
+                <span>{accessLabel(d.access.coverageBreakdown, {
+                  failed: result.scan_coverage.failed,
+                  cancelled: result.scan_coverage.cancelled,
+                  in_progress: result.scan_coverage.in_progress,
+                })}</span>
+              </div>
+              <span>{d.access.coverageInventoryNote}</span>
+              {result.scan_coverage.sessions.filter((session) => session.status.toLowerCase() !== 'completed').map((session) => (
+                <div key={session.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-warning/20 pt-1.5">
+                  <span className="min-w-0 break-all font-mono" title={session.root_path}>{session.root_path}</span>
+                  <Badge tone={session.status.toLowerCase() === 'failed' ? 'danger' : 'neutral'}>{scanStatusLabel(session.status, d)}</Badge>
+                  <span>{scanDepthLabel(session.max_depth, d)}</span>
+                  {session.error_message ? <span className="break-all">{session.error_message}</span> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
           {/* Summary row */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card>
@@ -301,10 +371,16 @@ function ByUserTab() {
             <Card>
               <CardHeader title={d.access.sessionsCard} />
               <CardContent className="max-h-40 space-y-1 overflow-auto">
-                {result.sessions.map((session) => (
-                  <p key={session.id} className="truncate font-mono text-2xs text-fg-secondary" title={session.root_path}>
-                    {session.root_path}
+                {result.path_prefix ? (
+                  <p className="truncate font-mono text-2xs text-info" title={result.path_prefix}>
+                    {accessLabel(d.access.scopeApplied, { path: result.path_prefix })}
                   </p>
+                ) : null}
+                {result.sessions.map((session) => (
+                  <div key={session.id} className="flex min-w-0 items-center gap-2 text-2xs text-fg-secondary">
+                    <span className="min-w-0 flex-1 truncate font-mono" title={session.root_path}>{session.root_path}</span>
+                    <span className="shrink-0 text-fg-muted">{scanDepthLabel(session.max_depth, d)}</span>
+                  </div>
                 ))}
                 <div className="flex gap-3 pt-1 text-2xs text-fg-muted">
                   <span>

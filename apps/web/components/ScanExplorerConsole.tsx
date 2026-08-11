@@ -22,6 +22,7 @@ import { Badge, type BadgeTone } from './ui/badge';
 import { Button } from './ui/button';
 import { Input, NativeSelect } from './ui/input';
 import { EmptyState } from './ui/empty-state';
+import { Dialog, DialogContent, DialogFooter } from './ui/dialog';
 
 interface DirectoryItem {
   name: string;
@@ -74,7 +75,18 @@ interface ScanExplorerConsoleProps {
   onDepthChange: (value: number) => void;
   onIncludeInheritedChange: (value: boolean) => void;
   onScan: (pathOverride?: string) => void;
+  onScanDiscoveredShares?: (serverPath: string, sharePaths: string[]) => void;
   onCancelScan?: () => void;
+  serverBatch?: ServerBatchProgress | null;
+}
+
+export interface ServerBatchProgress {
+  serverPath: string;
+  total: number;
+  completed: number;
+  failed: number;
+  currentPath: string;
+  active: boolean;
 }
 
 interface RuntimeIdentitySnapshot {
@@ -362,7 +374,9 @@ export default function ScanExplorerConsole({
   onDepthChange,
   onIncludeInheritedChange,
   onScan,
+  onScanDiscoveredShares,
   onCancelScan,
+  serverBatch,
 }: ScanExplorerConsoleProps) {
   const router = useRouter();
   const { connection } = useADConnection();
@@ -376,6 +390,9 @@ export default function ScanExplorerConsole({
   const [elapsedLabel, setElapsedLabel] = useState('00:00');
   const [runtimeIdentity, setRuntimeIdentity] = useState<RuntimeIdentitySnapshot | null>(null);
   const [runtimeIdentityError, setRuntimeIdentityError] = useState('');
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
+  const [includeHiddenShares, setIncludeHiddenShares] = useState(false);
+  const [selectedSharePaths, setSelectedSharePaths] = useState<string[]>([]);
 
   useEffect(() => {
     setPathInput(path);
@@ -389,6 +406,38 @@ export default function ScanExplorerConsole({
     ? text(locale, 'Discover Shares', '发现共享')
     : text(locale, 'Start Scan', '开始扫描');
   const primaryActionIcon = isUNCServerRootPath(stagedPath) ? <Server className="h-4 w-4" /> : <Play className="h-4 w-4" />;
+  const discoveredSharePaths = useMemo(() => {
+    if (!isUNCServerRootPath(stagedPath)) {
+      return [];
+    }
+
+    const serverNode = nodes[stagedPath];
+    if (!serverNode?.loaded) {
+      return [];
+    }
+
+    return serverNode.childPaths.filter((childPath) => nodes[childPath]?.kind === 'share');
+  }, [nodes, stagedPath]);
+  const discoveredShareSignature = discoveredSharePaths.join('\u0000');
+  useEffect(() => {
+    setSelectedSharePaths((current) => {
+      if (current.length === 0) {
+        return discoveredSharePaths;
+      }
+      const available = new Set(discoveredSharePaths);
+      return current.filter((sharePath) => available.has(sharePath));
+    });
+  }, [discoveredShareSignature]);
+  const selectedDiscoveredSharePaths = discoveredSharePaths.filter((sharePath) => selectedSharePaths.includes(sharePath));
+  const allDiscoveredSharesSelected = discoveredSharePaths.length > 0
+    && selectedDiscoveredSharePaths.length === discoveredSharePaths.length;
+  const canStartServerBatch = Boolean(
+    onScanDiscoveredShares
+    && isUNCServerRootPath(stagedPath)
+    && discoveredSharePaths.length > 0
+    && !serverBatch?.active,
+  );
+  const scanBusy = loading || Boolean(serverBatch?.active);
   const scanScopeActive = isPathWithinScope(selectedPath, progressTrackedPath);
   const hasProgressSnapshot =
     scanScopeActive &&
@@ -416,7 +465,7 @@ export default function ScanExplorerConsole({
             ? text(locale, 'Scanning Directory Structure', '正在扫描目录结构')
             : text(locale, 'Ready to Scan', '等待开始扫描');
   const canCancelScan = Boolean(
-    onCancelScan && (loading || progressStatus === 'running' || progressStatus === 'expanding' || progressStatus === 'connecting')
+    onCancelScan && (scanBusy || progressStatus === 'running' || progressStatus === 'expanding' || progressStatus === 'connecting')
   );
   const permissionRowTotal = permissionCount || resultCount;
   const progressFacts = [
@@ -484,11 +533,14 @@ export default function ScanExplorerConsole({
     return 'windows';
   };
 
-  const fetchDirectories = async (targetPath: string) => {
+  const fetchDirectories = async (targetPath: string, includeHidden = false) => {
     const normalized = normalizePath(targetPath);
     const params = new URLSearchParams();
     if (normalized) {
       params.set('path', normalized);
+    }
+    if (includeHidden && isUNCServerRootPath(normalized)) {
+      params.set('include_hidden_shares', 'true');
     }
     const query = params.toString() ? `?${params.toString()}` : '';
     const response = await fetch(`${apiBase()}/api/fs/directories${query}`);
@@ -593,7 +645,7 @@ export default function ScanExplorerConsole({
     }
   };
 
-  const loadChildren = async (targetPath: string, options?: { force?: boolean; expand?: boolean }) => {
+  const loadChildren = async (targetPath: string, options?: { force?: boolean; expand?: boolean; includeHiddenShares?: boolean }) => {
     const normalized = normalizePath(targetPath);
     if (!normalized) {
       await loadRoots();
@@ -630,7 +682,9 @@ export default function ScanExplorerConsole({
         return;
       }
 
-      const data = await fetchDirectories(normalized);
+      const discoveryIncludesHidden = options?.includeHiddenShares
+        ?? (isUNCServerRootPath(normalized) && includeHiddenShares);
+      const data = await fetchDirectories(normalized, discoveryIncludesHidden);
       hydrateDirectory(normalized, Array.isArray(data.items) ? data.items : []);
       setTreeError('');
       setTreeErrorTarget('');
@@ -832,7 +886,7 @@ export default function ScanExplorerConsole({
               <NativeSelect
                 value={depth}
                 onChange={(event) => onDepthChange(Number(event.target.value))}
-                disabled={loading}
+                disabled={scanBusy}
                 className="w-auto"
               >
                 {[-1, 1, 2, 3, 4, 5, 8, 10].map((value) => (
@@ -845,7 +899,7 @@ export default function ScanExplorerConsole({
                 type="checkbox"
                 checked={includeInherited}
                 onChange={(event) => onIncludeInheritedChange(event.target.checked)}
-                disabled={loading}
+                disabled={scanBusy}
                 className="h-3.5 w-3.5 rounded border-line"
               />
               <span className="whitespace-nowrap">{text(locale, 'Include inherited', '包含继承')}</span>
@@ -853,12 +907,40 @@ export default function ScanExplorerConsole({
               <Button
                 type="button"
                 onClick={() => void handleStartScan()}
-                disabled={loading || !pathInput.trim()}
+                disabled={scanBusy || !pathInput.trim()}
                 variant="primary"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : primaryActionIcon}
                 {loading ? text(locale, 'Scanning…', '扫描中…') : primaryActionLabel}
               </Button>
+            {canStartServerBatch ? (
+              <Button
+                type="button"
+                onClick={() => setBatchDialogOpen(true)}
+                disabled={scanBusy}
+                variant="secondary"
+              >
+                <Server className="h-4 w-4" />
+                {text(locale, `Scan ${selectedDiscoveredSharePaths.length} discovered shares`, `扫描已发现的 ${selectedDiscoveredSharePaths.length} 个共享`)}
+              </Button>
+            ) : null}
+            {isUNCServerRootPath(stagedPath) ? (
+              <label className="flex items-center gap-2 text-xs font-medium text-fg-secondary">
+                <input
+                  type="checkbox"
+                  checked={includeHiddenShares}
+                  aria-label={text(locale, 'Include hidden business shares', '包含隐藏业务共享')}
+                  onChange={(event) => {
+                    const nextValue = event.target.checked;
+                    setIncludeHiddenShares(nextValue);
+                    void loadChildren(stagedPath, { force: true, includeHiddenShares: nextValue, expand: true });
+                  }}
+                  disabled={scanBusy || treeLoading}
+                  className="h-3.5 w-3.5 rounded border-line"
+                />
+                <span className="whitespace-nowrap">{text(locale, 'Include hidden business shares', '包含隐藏业务共享')}</span>
+              </label>
+            ) : null}
             {canCancelScan ? (
               <Button
                 type="button"
@@ -884,6 +966,16 @@ export default function ScanExplorerConsole({
           <p className="truncate font-mono text-2xs text-fg-muted">
             {stagedPath || text(locale, 'Select a directory or enter a path.', '请选择目录或输入路径。')}
           </p>
+
+          {serverBatch?.active ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-info/40 bg-info-soft px-3 py-2 text-xs text-info" role="status" aria-live="polite">
+              <span className="font-medium">{text(locale, 'Server batch scan', '服务器批量扫描')}</span>
+              <span className="font-mono">{serverBatch.serverPath}</span>
+              <span>{text(locale, `${serverBatch.completed + serverBatch.failed}/${serverBatch.total} complete`, `已完成 ${serverBatch.completed + serverBatch.failed}/${serverBatch.total}`)}</span>
+              <span>{text(locale, `${serverBatch.failed} failed`, `失败 ${serverBatch.failed}`)}</span>
+              {serverBatch.currentPath ? <span className="min-w-0 truncate font-mono">{serverBatch.currentPath}</span> : null}
+            </div>
+          ) : null}
 
           {showADPanel ? (
             <div
@@ -922,6 +1014,63 @@ export default function ScanExplorerConsole({
           ) : null}
         </CardContent>
       </Card>
+
+      <Dialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}>
+        <DialogContent
+          title={text(locale, 'Scan discovered shares', '扫描已发现共享')}
+          description={text(
+            locale,
+            `OpenAD will scan ${selectedDiscoveredSharePaths.length} of ${discoveredSharePaths.length} shares under ${stagedPath} one at a time. Each share keeps its own permission snapshot.`,
+            `OpenAD 将按顺序扫描 ${stagedPath} 下选中的 ${selectedDiscoveredSharePaths.length}/${discoveredSharePaths.length} 个共享；每个共享都会保留独立的权限快照。`,
+          )}
+        >
+          <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-line bg-surface-sunken p-2" aria-label={text(locale, 'Discovered shares', '已发现共享')}>
+            {includeHiddenShares ? (
+              <div className="mb-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning" role="alert">
+                {text(locale, 'Hidden shares are opt-in. System administration shares remain excluded.', '隐藏共享仅在主动开启后显示，系统管理共享仍会被排除。')}
+              </div>
+            ) : null}
+            <label className="mb-2 flex items-center gap-2 text-xs font-medium text-fg-secondary">
+              <input
+                type="checkbox"
+                checked={allDiscoveredSharesSelected}
+                onChange={(event) => setSelectedSharePaths(event.target.checked ? discoveredSharePaths : [])}
+                className="h-3.5 w-3.5 rounded border-line"
+              />
+              <span>{text(locale, 'Select all discovered shares', '全选已发现共享')}</span>
+            </label>
+            {discoveredSharePaths.map((sharePath) => (
+              <label key={sharePath} className="flex items-center gap-2 rounded px-1 py-1 text-2xs text-fg-secondary hover:bg-surface">
+                <input
+                  type="checkbox"
+                  checked={selectedSharePaths.includes(sharePath)}
+                  onChange={(event) => setSelectedSharePaths((current) => event.target.checked
+                    ? Array.from(new Set([...current, sharePath]))
+                    : current.filter((item) => item !== sharePath))}
+                  className="h-3.5 w-3.5 shrink-0 rounded border-line"
+                />
+                <span className="min-w-0 truncate font-mono" title={sharePath}>{sharePath}</span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setBatchDialogOpen(false)}>
+              {text(locale, 'Cancel', '取消')}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setBatchDialogOpen(false);
+                onScanDiscoveredShares?.(stagedPath, selectedDiscoveredSharePaths);
+              }}
+              disabled={selectedDiscoveredSharePaths.length === 0 || scanBusy}
+            >
+              <Play className="h-3.5 w-3.5" />
+              {text(locale, `Scan ${selectedDiscoveredSharePaths.length} shares`, `扫描 ${selectedDiscoveredSharePaths.length} 个共享`)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2">
@@ -978,12 +1127,12 @@ export default function ScanExplorerConsole({
                       </Button>
                     ) : null}
                     {isUNCPath(treeErrorTarget || selectedPath) && !isUNCServerRootPath(treeErrorTarget || selectedPath) ? (
-                      <Button
-                        type="button"
-                        onClick={() => void handleStartScan()}
-                        disabled={loading || !pathInput.trim()}
-                        variant="primary"
-                        size="sm"
+              <Button
+                type="button"
+                onClick={() => void handleStartScan()}
+                disabled={scanBusy || !pathInput.trim()}
+                variant="primary"
+                size="sm"
                       >
                         <Play className="h-3.5 w-3.5" />
                         {text(locale, 'Try scan anyway', '仍然扫描')}

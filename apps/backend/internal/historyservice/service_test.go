@@ -110,6 +110,42 @@ func TestGetSessionReturnsValidationAndNotFoundErrors(t *testing.T) {
 	})
 }
 
+func TestDeleteSessionsRemovesEvidenceAndProtectsRunningScans(t *testing.T) {
+	db := newHistoryDeleteDB(t)
+	completed := models.ScanSession{ID: uuid.New(), RootPath: `C:\Completed`, Status: "completed", StartedAt: time.Now().UTC()}
+	failed := models.ScanSession{ID: uuid.New(), RootPath: `C:\Failed`, Status: "failed", StartedAt: time.Now().UTC()}
+	running := models.ScanSession{ID: uuid.New(), RootPath: `C:\Running`, Status: "running", StartedAt: time.Now().UTC()}
+	require.NoError(t, db.Create(&[]models.ScanSession{completed, failed, running}).Error)
+	require.NoError(t, db.Create(&models.Permission{ScanSessionID: completed.ID, Path: `C:\Completed`, Trustee: "Everyone", TrusteeSID: "S-1-1-0", Rights: "Read", Type: "allow"}).Error)
+	require.NoError(t, db.Create(&models.PermissionChange{ScanSessionID: completed.ID, Path: `C:\Completed`, Trustee: "Everyone", TrusteeSID: "S-1-1-0", ChangeType: "added", DetectedAt: time.Now().UTC()}).Error)
+	require.NoError(t, db.Create(&models.RiskFinding{Fingerprint: "finding-1", Status: "open", Severity: "high", Type: "broad-access", Title: "Broad access", Path: `C:\Completed`, Trustee: "Everyone", TrusteeSID: "S-1-1-0", FirstSeenAt: time.Now().UTC(), LastSeenAt: time.Now().UTC(), LastSessionID: completed.ID.String()}).Error)
+
+	service := NewWithRepositoryAndDatabase(&databaseRepository{}, db)
+	response, err := service.DeleteSessions([]string{completed.ID.String(), completed.ID.String()}, false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, response.Deleted)
+
+	var count int64
+	require.NoError(t, db.Model(&models.Permission{}).Where("scan_session_id = ?", completed.ID).Count(&count).Error)
+	assert.Zero(t, count)
+	require.NoError(t, db.Model(&models.PermissionChange{}).Where("scan_session_id = ?", completed.ID).Count(&count).Error)
+	assert.Zero(t, count)
+	assert.ErrorIs(t, db.First(&models.ScanSession{}, "id = ?", completed.ID).Error, gorm.ErrRecordNotFound)
+
+	var finding models.RiskFinding
+	require.NoError(t, db.Where("fingerprint = ?", "finding-1").First(&finding).Error)
+	assert.Empty(t, finding.LastSessionID)
+
+	_, err = service.DeleteSessions([]string{running.ID.String()}, false)
+	assert.ErrorIs(t, err, ErrSessionActive)
+
+	response, err = service.DeleteSessions(nil, true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, response.Deleted)
+	assert.ErrorIs(t, db.First(&models.ScanSession{}, "id = ?", failed.ID).Error, gorm.ErrRecordNotFound)
+	assert.NoError(t, db.First(&models.ScanSession{}, "id = ?", running.ID).Error)
+}
+
 func TestGetSessionBundleReturnsSessionAndPermissions(t *testing.T) {
 	session := models.ScanSession{
 		ID:               uuid.New(),
@@ -256,6 +292,14 @@ func newHistoryResolverDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.DirectorySyncRun{}, &models.ADUserRecord{}, &models.ADGroupRecord{}, &models.ADMembershipRecord{}))
+	return db
+}
+
+func newHistoryDeleteDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.ScanSession{}, &models.Permission{}, &models.PermissionChange{}, &models.RiskFinding{}))
 	return db
 }
 

@@ -27,7 +27,8 @@ dist\OpenAD-Windows-Desktop-v1.0.0
 | `Microsoft.Web.WebView2.*`、`WebView2Loader.dll` | WebView2 集成文件 |
 | `runtimes\` | 平台相关原生资源 |
 | `OpenAD-README.txt` | 启动和数据路径说明 |
-| `start-windows.bat` | 浏览器模式备用启动脚本 |
+| `start-windows.bat` | 仅回环地址的浏览器模式备用启动脚本 |
+| `disable-lan-access.bat` | 清理旧版本遗留的局域网防火墙规则 |
 | `stop-windows.bat` | 运行时停止脚本 |
 | `verify-install.bat` | 备用安装包检查脚本 |
 
@@ -83,7 +84,8 @@ dist\OpenAD-Windows-Desktop-v1.0.0
 | `Microsoft.Web.WebView2.*`, `WebView2Loader.dll` | WebView2 integration files |
 | `runtimes\` | Platform-specific native resources |
 | `OpenAD-README.txt` | Startup and data-path guidance |
-| `start-windows.bat` | Browser-mode fallback launcher |
+| `start-windows.bat` | Loopback-only browser-mode fallback launcher |
+| `disable-lan-access.bat` | Removes LAN firewall rules left by older releases |
 | `stop-windows.bat` | Runtime shutdown script |
 | `verify-install.bat` | Fallback package verification script |
 
