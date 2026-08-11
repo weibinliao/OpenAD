@@ -1,7 +1,7 @@
 import Head from 'next/head';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
-import { AlertTriangle, ArrowRightLeft, CheckCircle2, History, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, CheckCircle2, History, RefreshCw, Trash2 } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
 import { buildWorkspacePageTitle, defaultWorkspaceSettings, readWorkspaceSettings, type WorkspaceSettings } from '../lib/workspaceSettings';
 import { apiBase } from '../lib/runtimeApi';
@@ -79,6 +79,9 @@ export default function HistoryPage() {
   const [compareError, setCompareError] = useState<string | null>(null);
   const [compareResult, setCompareResult] = useState<CompareResponse | null>(null);
   const [comparing, setComparing] = useState(false);
+  const [selectedSessionIDs, setSelectedSessionIDs] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const router = useRouter();
 
   const fetchSessions = async () => {
@@ -117,6 +120,19 @@ export default function HistoryPage() {
     () => sessions.filter((session) => session.status === 'completed'),
     [sessions]
   );
+
+  const deletableSessions = useMemo(
+    () => sessions.filter((session) => session.status !== 'running'),
+    [sessions],
+  );
+
+  const allDeletableSelected = deletableSessions.length > 0
+    && deletableSessions.every((session) => selectedSessionIDs.includes(session.id));
+
+  useEffect(() => {
+    const availableIDs = new Set(deletableSessions.map((session) => session.id));
+    setSelectedSessionIDs((current) => current.filter((id) => availableIDs.has(id)));
+  }, [deletableSessions]);
 
   const latestCompletedAt = useMemo(() => {
     let latest: string | null = null;
@@ -179,6 +195,46 @@ export default function HistoryPage() {
       setCompareError(compareErr instanceof Error ? compareErr.message : t('failedCompare'));
     } finally {
       setComparing(false);
+    }
+  };
+
+  const handleDeleteSessions = async (ids: string[], allTerminal = false) => {
+    const count = allTerminal ? deletableSessions.length : ids.length;
+    if (count === 0 || deleting) return;
+
+    const confirmation = allTerminal
+      ? text(
+          locale,
+          'Delete all completed, failed, and cancelled scan sessions and their permission evidence? This cannot be undone. Running scans will be kept.',
+          '确定清除全部已完成、失败和取消的扫描历史及其权限证据吗？此操作不可撤销，运行中的扫描会保留。',
+        )
+      : text(
+          locale,
+          `Delete ${count} selected scan session${count === 1 ? '' : 's'} and their permission evidence? This cannot be undone.`,
+          `确定删除选中的 ${count} 条扫描历史及其权限证据吗？此操作不可撤销。`,
+        );
+    if (typeof window !== 'undefined' && !window.confirm(confirmation)) return;
+
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/sessions`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(allTerminal ? { all_terminal: true } : { session_ids: ids }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || text(locale, 'Failed to delete scan history.', '删除扫描历史失败。'));
+
+      const removedIDs = allTerminal ? new Set(deletableSessions.map((session) => session.id)) : new Set(ids);
+      setSelectedSessionIDs([]);
+      if (allTerminal || removedIDs.has(baselineSessionID)) setBaselineSessionID('');
+      if (allTerminal || removedIDs.has(currentSessionID)) setCurrentSessionID('');
+      setSessions((current) => current.filter((session) => !removedIDs.has(session.id)));
+    } catch (deleteErr) {
+      setDeleteError(deleteErr instanceof Error ? deleteErr.message : text(locale, 'Failed to delete scan history.', '删除扫描历史失败。'));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -299,14 +355,46 @@ export default function HistoryPage() {
             title={text(locale, 'Session Records', '会话记录')}
             description={text(locale, 'Completed, running, and failed sessions from the history endpoint.', '来自历史接口的已完成、运行中和失败会话。')}
             actions={
-              latestCompletedAt ? (
-                <span className="text-2xs text-fg-muted">
-                  {text(locale, `Latest ${formatDateTime(latestCompletedAt, locale)}`, `最近 ${formatDateTime(latestCompletedAt, locale)}`)}
-                </span>
-              ) : null
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {selectedSessionIDs.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    onClick={() => void handleDeleteSessions(selectedSessionIDs)}
+                    loading={deleting}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {text(locale, `Delete selected (${selectedSessionIDs.length})`, `删除选中（${selectedSessionIDs.length}）`)}
+                  </Button>
+                ) : null}
+                {deletableSessions.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleDeleteSessions([], true)}
+                    loading={deleting}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {text(locale, 'Clear finished history', '清除已结束历史')}
+                  </Button>
+                ) : null}
+                {latestCompletedAt ? (
+                  <span className="text-2xs text-fg-muted">
+                    {text(locale, `Latest ${formatDateTime(latestCompletedAt, locale)}`, `最近 ${formatDateTime(latestCompletedAt, locale)}`)}
+                  </span>
+                ) : null}
+              </div>
             }
           />
           <CardContent className="space-y-3">
+            {deleteError ? (
+              <div className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger-soft px-4 py-2.5 text-sm text-danger" role="alert">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            ) : null}
             {error ? (
               <div className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger-soft px-4 py-2.5 text-sm text-danger">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -346,9 +434,19 @@ export default function HistoryPage() {
             ) : (
               <TableContainer>
                 <Table className="min-w-[920px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t('path')}</TableHead>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-10">
+                          <input
+                            type="checkbox"
+                            aria-label={text(locale, 'Select all finished sessions', '选择全部已结束扫描')}
+                            checked={allDeletableSelected}
+                            onChange={(event) => setSelectedSessionIDs(event.target.checked ? deletableSessions.map((session) => session.id) : [])}
+                            disabled={deletableSessions.length === 0 || deleting}
+                            className="h-3.5 w-3.5 rounded border-line"
+                          />
+                        </TableHead>
+                        <TableHead>{t('path')}</TableHead>
                       <TableHead>{t('status')}</TableHead>
                       <TableHead className="text-right">{t('items')}</TableHead>
                       <TableHead className="text-right">{t('permissions')}</TableHead>
@@ -359,6 +457,18 @@ export default function HistoryPage() {
                   <TableBody>
                     {sessions.map((session) => (
                       <TableRow key={session.id}>
+                        <TableCell className="w-10">
+                          <input
+                            type="checkbox"
+                            aria-label={text(locale, `Select ${session.root_path}`, `选择 ${session.root_path}`)}
+                            checked={selectedSessionIDs.includes(session.id)}
+                            onChange={(event) => setSelectedSessionIDs((current) => event.target.checked
+                              ? Array.from(new Set([...current, session.id]))
+                              : current.filter((id) => id !== session.id))}
+                            disabled={session.status === 'running' || deleting}
+                            className="h-3.5 w-3.5 rounded border-line"
+                          />
+                        </TableCell>
                         <TableCell className="max-w-[320px]">
                           <span className="block truncate font-medium text-fg" title={session.root_path}>{session.root_path}</span>
                           <span className="mt-0.5 block text-2xs text-fg-muted">{t('depthLabel')}: {session.max_depth}, {t('inheritedLabel')}: {session.include_inherited ? t('yes') : t('no')}</span>
@@ -370,10 +480,24 @@ export default function HistoryPage() {
                         <TableCell className="text-right tabular-nums">{session.permission_count}</TableCell>
                         <TableCell className="whitespace-nowrap text-fg-muted">{formatDate(session.started_at)}</TableCell>
                         <TableCell>
-                          <div className="flex flex-col items-start gap-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <Button variant="outline" size="sm" onClick={() => openSessionInStudio(router, session.id)}>
                               {text(locale, 'Open report', '打开报告')}
                             </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="!h-7 !w-7 text-danger"
+                              aria-label={text(locale, `Delete ${session.root_path}`, `删除 ${session.root_path}`)}
+                              title={text(locale, 'Delete scan history', '删除扫描历史')}
+                              onClick={() => void handleDeleteSessions([session.id])}
+                              disabled={session.status === 'running' || deleting}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          <div className="mt-1">
                             <span className="font-mono text-2xs text-fg-faint">{session.id}</span>
                           </div>
                         </TableCell>

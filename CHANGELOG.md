@@ -4,6 +4,25 @@
 
 ## 中文
 
+### 1.0.1 - 待发布
+
+#### 新增
+
+- 正式 Windows 桌面包现在固定只监听本机回环地址；桌面启动器不再接受 `0.0.0.0` 等局域网绑定参数。旧版本留下的 OpenAD/PermissionProtector 防火墙规则可用 `disable-lan-access.bat` 清理。
+- 扫描中心的服务器共享批量扫描现在支持逐项选择；默认保持全选。可选显示隐藏业务共享，但默认关闭，并始终排除磁盘管理共享、`ADMIN$`、`IPC$` 和 `PRINT$`。
+- 访问分析按用户使用服务器或路径范围时会显示“已有扫描记录覆盖情况”：完成、失败、已取消和进行中的最新记录分别计数，失败路径会显示原因和扫描深度。该统计不会把未产生扫描记录的共享误报为已覆盖。
+- 系统设置新增应用更新卡片：桌面版可检查官方 GitHub Release、查看版本说明，并在确认后下载经过 SHA-256 校验的 `OpenAD.exe` 安装包重新安装。
+- 更新安装继续保留 `%APPDATA%\OpenAD` 中的连接配置、扫描历史和本地设置；普通浏览器模式会打开 GitHub 版本页面供手动下载。
+- 扫描中心现在可以在发现 `\\server` 下的共享后，经用户确认按顺序扫描每个共享；各共享保留独立的权限快照。
+- 访问分析的“按用户”新增可选范围：填写 `\\server` 可汇总查看该用户在已扫描共享及其目录中的 NTFS ACL 证据、权限及组继承路径。
+
+- 后台扫描和目录同步任务现在会把未处理异常记录为任务失败，不再直接终止 API 进程；目录同步增加 30 分钟兜底超时，并记录最终状态写入错误。
+- Explorer 保留正常完成后的刷新行为，同时限制卡住的同步轮询、提示成员和 ACL 列表的截断数量，并支持目录树键盘选择和展开。
+- Windows 标签构建现在会发布自动更新所需的 `OpenAD.exe` 和校验文件，手动构建默认版本同步为 `1.0.1`。
+
+- 扫描历史支持单条删除、勾选多条删除，以及一键清除全部已结束记录；运行中的扫描不会被删除，删除会同步清理权限证据、权限变更记录和风险发现的历史会话引用。
+- 按资源分析不再接受裸 `\\server` 服务器根路径，必须指定具体共享，或改用“按用户”查看该服务器下所有已扫描共享。
+
 ### 1.0.0 - 2026-08-06
 
 #### 新增
@@ -95,6 +114,23 @@
 - 移除扫描中心的“使用已保存 AD 连接访问 UNC”选择，避免把 AD 账号误解为 SMB 共享访问凭据；OpenAD 现在只提示用户先准备本地 Windows 网络凭据，并且扫描发起不再携带 AD SMB 访问参数。
 
 ## English
+
+### 1.0.1 - Unreleased
+
+#### Added
+
+- Official Windows desktop packages now bind only to the local loopback interface. Desktop launchers ignore `0.0.0.0`-style LAN host parameters, and `disable-lan-access.bat` removes firewall rules left by older OpenAD/PermissionProtector LAN setup scripts.
+- Server-share batch scans in Scan Center now support selecting individual discovered shares while keeping the all-selected default. Hidden business shares can be included explicitly, remain off by default, and administrative disk shares, `ADMIN$`, `IPC$`, and `PRINT$` stay excluded.
+- User access analysis with a server or path scope now shows recorded scan coverage: latest completed, failed, cancelled, and in-progress records are counted separately, and failed paths expose their reason and scan depth. Shares without a recorded scan are never presented as covered.
+- Added an Application Update card to System Settings. The desktop runtime can check the official GitHub Release, show release notes, and download a SHA-256-verified `OpenAD.exe` installer after confirmation.
+- Reinstallation preserves connection profiles, scan history, and local settings under `%APPDATA%\OpenAD`; browser mode opens the GitHub release page for manual download.
+- Scan Center can now discover shares below `\\server` and, after explicit confirmation, scan each share sequentially while retaining an individual permission snapshot for every share.
+- Access Analysis by user now accepts an optional scope. Entering `\\server` summarizes the user's NTFS ACL evidence, rights, and group inheritance paths across completed scans of that server's shares and folders.
+- Background scan and directory-sync workers now convert unexpected panics into failed task records instead of terminating the API process; directory sync also has a 30-minute safety timeout and records finalization errors.
+- Explorer keeps its normal completion refresh but stops stuck sync polling after a safety limit, announces truncated member/ACL lists, and adds keyboard selection and expansion to directory tree rows.
+- Windows tag builds now publish the exact `OpenAD.exe` and checksum assets required by the in-app updater; the manual workflow default is aligned to `1.0.1`.
+- Scan History now supports deleting one session, deleting a selected set, or clearing all finished sessions. Running scans are protected, and deletion also removes permission evidence, permission changes, and stale risk-finding session references.
+- By Resource analysis now rejects a bare `\\server` root. Choose a specific share, or use By User to review all scanned shares below that server.
 
 ### 1.0.0 - 2026-08-06
 

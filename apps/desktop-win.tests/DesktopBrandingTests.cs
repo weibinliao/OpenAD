@@ -73,10 +73,13 @@ public sealed class DesktopBrandingTests
         var rootDirectory = Directory.GetParent(projectDirectory)?.Parent?.FullName
             ?? throw new DirectoryNotFoundException("Could not locate repository root.");
         var lanAccessScript = File.ReadAllText(Path.Combine(rootDirectory, "scripts", "enable-lan-access.bat"));
+        var lanCleanupScript = File.ReadAllText(Path.Combine(rootDirectory, "scripts", "disable-lan-access.bat"));
         var installTaskScript = File.ReadAllText(Path.Combine(rootDirectory, "scripts", "install-startup-task.bat"));
 
-        Assert.Contains("OpenAD Web", lanAccessScript, StringComparison.Ordinal);
-        Assert.Contains("OpenAD API", lanAccessScript, StringComparison.Ordinal);
+        Assert.Contains("LAN browser mode is disabled", lanAccessScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("firewall add rule", lanAccessScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("OpenAD Web", lanCleanupScript, StringComparison.Ordinal);
+        Assert.Contains("OpenAD API", lanCleanupScript, StringComparison.Ordinal);
         Assert.DoesNotContain("firewall add rule name=\"PermissionProtector", lanAccessScript, StringComparison.Ordinal);
         Assert.Contains("set \"TASK_NAME=OpenAD\"", installTaskScript, StringComparison.Ordinal);
     }

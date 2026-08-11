@@ -84,7 +84,11 @@ Invoke-RestMethod http://127.0.0.1:18080/health
 
 开发界面地址为 `http://127.0.0.1:3010`。API、Next.js 开发服务器和兼容静态 Web 服务默认都只监听 `127.0.0.1`；空 `ALLOW_ORIGINS` 只允许本机 `3010` 与 `43110` Web 来源。静态导出写入 `apps/web/out`，该目录已忽略。
 
-需要在可信管理网络上显式启用浏览器模式时，以管理员身份运行 `scripts\enable-lan-access.bat`，把输出命令中的 `your-host-ip` 替换为实际 LAN 地址后执行。该命令只对本次启动设置全网卡绑定与精确 CORS/WebSocket Origin；普通启动不会持久化 LAN 暴露。OpenAD 当前没有产品级登录或 RBAC，禁止用于公网或不可信网络。
+正式 Windows 桌面包强制只监听 `127.0.0.1`，启动器不再接受 `0.0.0.0`、`*` 或 `+` 等局域网绑定参数。若旧版本曾启用局域网模式，请以管理员身份运行 `scripts\disable-lan-access.bat`，清理持久化防火墙规则。局域网浏览器部署不属于当前正式桌面交付能力。
+
+正式 Windows 桌面 API 使用 Go 编译标签 `openad_desktop` 构建。该标签让发布版 API 忽略
+`API_HOST` 与 `BIND_HOST`，强制监听 `127.0.0.1`；不带该标签的开发和服务器构建仍保留显式主机配置能力。
+权威桌面构建脚本会将该标签同时应用于后端测试和 `OpenAD.Server.exe`。
 
 ## Windows 桌面端
 
@@ -107,7 +111,7 @@ OpenAD 产品名；旧数据路径仅作为升级兼容入口保留。
 构建供最终用户安装的 `win-x64` 安装程序：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 -Version 1.0.0
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 -Version 1.0.1
 ```
 
 输出为 `dist/OpenAD.exe` 及 `dist/OpenAD.exe.sha256`。版本号保存在安装器元数据中，构建会发布
@@ -117,6 +121,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-inst
 `%APPDATA%\OpenAD` 或兼容数据目录，因此新电脑首次启动为空白，升级和卸载则保留已有数据。
 目标电脑仍需安装 Microsoft Edge WebView2 Runtime。当前安装程序未做代码签名，Windows
 SmartScreen 可能显示“未知发布者”。
+
+桌面版系统设置中的应用更新会访问 `https://api.github.com/repos/weibinliao/OpenAD/releases/latest`，
+只接受官方 Release 中精确命名的 `OpenAD.exe` 和 `OpenAD.exe.sha256`，下载后必须通过 SHA-256 校验才会
+启动安装程序。更新需要目标电脑能够访问 GitHub；安装不是静默模式，且不会删除 `%APPDATA%\OpenAD`。
 
 ## 验证等级
 
@@ -248,7 +256,12 @@ Local application data is stored under `%APPDATA%\OpenAD`; first launch migrates
 
 The development UI is available at `http://127.0.0.1:3010`. The API, Next.js development server, and compatibility static Web server all bind only to `127.0.0.1` by default. With an empty `ALLOW_ORIGINS`, only local Web origins on ports `3010` and `43110` are allowed. Static export writes to the ignored `apps/web/out` directory.
 
-To enable browser mode explicitly on a trusted administration network, run `scripts\enable-lan-access.bat` as Administrator, replace `your-host-ip` in the printed command with the actual LAN address, and execute it. The command enables all-interface binding and exact CORS/WebSocket Origin only for that launch; normal launches do not persist LAN exposure. OpenAD has no product-level login or RBAC and must not be used on the public internet or an untrusted network.
+The shipping Windows desktop package is forced to `127.0.0.1`; its launchers reject `0.0.0.0`, `*`, and `+` LAN host values. If an older release enabled LAN mode, run `scripts\disable-lan-access.bat` as Administrator to remove persistent firewall rules. LAN browser deployment is not part of the current shipping desktop product.
+
+The shipping Windows desktop API is built with the `openad_desktop` Go build tag. This tag makes
+the packaged API ignore `API_HOST` and `BIND_HOST` and bind only to `127.0.0.1`; development and
+server builds without the tag retain their explicit host configuration behavior. The authoritative
+desktop build script applies the tag to both backend tests and `OpenAD.Server.exe`.
 
 ### Windows Desktop
 
@@ -270,7 +283,7 @@ Output is written to `dist/OpenAD-Windows-Desktop-v<version>`. The installer and
 Build the installable `win-x64` setup program with:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 -Version 1.0.0
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 -Version 1.0.1
 ```
 
 This creates `dist/OpenAD.exe` and `dist/OpenAD.exe.sha256`. The version is retained in the installer
@@ -283,6 +296,12 @@ packages nor deletes `%APPDATA%\OpenAD` or the compatibility data directory, so 
 new machine starts blank while upgrades and uninstall preserve existing data. Microsoft Edge WebView2
 Runtime remains required on the target computer. The installer is currently unsigned, so Windows
 SmartScreen may show an unknown-publisher warning.
+
+The Application Update card in the desktop Settings page queries
+`https://api.github.com/repos/weibinliao/OpenAD/releases/latest`. It accepts only the exact
+`OpenAD.exe` and `OpenAD.exe.sha256` assets from the official release, verifies SHA-256 before
+launching the installer, and requires GitHub connectivity. Installation is not silent and does not
+delete `%APPDATA%\OpenAD`.
 
 ### Verification Levels
 

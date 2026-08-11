@@ -14,6 +14,7 @@ jest.mock('next/router', () => ({
 const mockRouterPush = jest.fn();
 const mockOnPathChange = jest.fn();
 const mockOnScan = jest.fn();
+const mockOnScanDiscoveredShares = jest.fn();
 const mockOnDepthChange = jest.fn();
 const mockOnIncludeInheritedChange = jest.fn();
 let mockProfiles: Array<Record<string, unknown>> = [];
@@ -26,7 +27,7 @@ function createFetchResponse(payload: unknown, ok = true, status = ok ? 200 : 50
   } as Response;
 }
 
-function renderConsole(path = '', options: { adReady?: boolean } = {}) {
+function renderConsole(path = '', options: { adReady?: boolean; onScanDiscoveredShares?: typeof mockOnScanDiscoveredShares } = {}) {
   return render(
     <I18nProvider>
       <ADConnectionProvider>
@@ -54,6 +55,7 @@ function renderConsole(path = '', options: { adReady?: boolean } = {}) {
           onDepthChange={mockOnDepthChange}
           onIncludeInheritedChange={mockOnIncludeInheritedChange}
           onScan={mockOnScan}
+          onScanDiscoveredShares={options.onScanDiscoveredShares}
         />
       </ADConnectionProvider>
     </I18nProvider>
@@ -66,6 +68,7 @@ describe('ScanExplorerConsole', () => {
   beforeEach(() => {
     mockOnPathChange.mockClear();
     mockOnScan.mockClear();
+    mockOnScanDiscoveredShares.mockClear();
     mockOnDepthChange.mockClear();
     mockOnIncludeInheritedChange.mockClear();
     mockRouterPush.mockClear();
@@ -197,6 +200,62 @@ describe('ScanExplorerConsole', () => {
     expect(mockOnScan).not.toHaveBeenCalled();
     expect(await screen.findByText('IT_dept')).toBeInTheDocument();
     expect(await screen.findByText('software')).toBeInTheDocument();
+  });
+
+  test('requires confirmation before sequentially scanning every discovered server share', async () => {
+    renderConsole('', { onScanDiscoveredShares: mockOnScanDiscoveredShares });
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '\\\\server' },
+    });
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', code: 'Enter' });
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan 2 discovered shares' }));
+    expect(screen.getByText('Scan discovered shares')).toBeInTheDocument();
+    expect(screen.getByText('\\\\server\\IT_dept')).toBeInTheDocument();
+    expect(mockOnScanDiscoveredShares).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Scan 2 shares' }));
+    expect(mockOnScanDiscoveredShares).toHaveBeenCalledWith('\\\\server', [
+      '\\\\server\\IT_dept',
+      '\\\\server\\software',
+    ]);
+  });
+
+  test('allows selecting only some discovered shares', async () => {
+    renderConsole('', { onScanDiscoveredShares: mockOnScanDiscoveredShares });
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '\\\\server' } });
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', code: 'Enter' });
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan 2 discovered shares' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '\\\\server\\IT_dept' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Scan 1 shares' }));
+
+    expect(mockOnScanDiscoveredShares).toHaveBeenCalledWith('\\\\server', ['\\\\server\\software']);
+  });
+
+  test('can opt into hidden share discovery and refreshes the server listing', async () => {
+    renderConsole('', { onScanDiscoveredShares: mockOnScanDiscoveredShares });
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '\\\\server' } });
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', code: 'Enter' });
+    });
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Include hidden business shares' }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('include_hidden_shares=true'),
+    ));
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan 2 discovered shares' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Hidden shares are opt-in');
   });
 
   test('starts a UNC scan with the current typed path when Start Scan is clicked', async () => {

@@ -11,6 +11,7 @@ internal sealed class MainForm : Form
     private const int HTCAPTION = 0x2;
 
     private readonly DesktopRuntime runtime = new();
+    private readonly DesktopUpdateService updateService = new();
     private readonly WebView2 webView = new();
     private readonly StartupExperienceControl startupExperience;
     private Icon? ownedWindowIcon;
@@ -47,7 +48,11 @@ internal sealed class MainForm : Form
             await Task.Delay(40);
             await BootAsync();
         };
-        FormClosing += (_, _) => runtime.Dispose();
+        FormClosing += (_, _) =>
+        {
+            updateService.Dispose();
+            runtime.Dispose();
+        };
         FormClosed += (_, _) => ownedWindowIcon?.Dispose();
     }
 
@@ -199,6 +204,12 @@ internal sealed class MainForm : Form
                 return;
             }
 
+            if (messageType == "openad-update")
+            {
+                _ = HandleDesktopUpdateMessageAsync(root.Clone());
+                return;
+            }
+
             if (messageType != "permission-protector-window")
             {
                 return;
@@ -252,6 +263,88 @@ internal sealed class MainForm : Form
         {
             // Ignore malformed messages from the embedded page.
         }
+    }
+
+    private async Task HandleDesktopUpdateMessageAsync(JsonElement message)
+    {
+        if (!TryGetString(message, "action", out var action))
+        {
+            return;
+        }
+
+        try
+        {
+            switch (action)
+            {
+                case "status":
+                    PostWebMessage(new
+                    {
+                        type = "openad-update",
+                        action = "status-result",
+                        ok = true,
+                        currentVersion = updateService.CurrentVersion,
+                    });
+                    break;
+                case "check":
+                    var update = await updateService.CheckAsync(CancellationToken.None);
+                    PostWebMessage(new
+                    {
+                        type = "openad-update",
+                        action = "check-result",
+                        ok = true,
+                        currentVersion = update.CurrentVersion,
+                        latestVersion = update.LatestVersion,
+                        releaseName = update.ReleaseName,
+                        releaseNotes = update.ReleaseNotes,
+                        publishedAt = update.PublishedAt,
+                        releaseUrl = update.ReleaseUrl.ToString(),
+                        updateAvailable = update.UpdateAvailable,
+                    });
+                    break;
+                case "install":
+                    var install = await updateService.DownloadAndLaunchAsync(CancellationToken.None);
+                    PostWebMessage(new
+                    {
+                        type = "openad-update",
+                        action = "install-result",
+                        ok = true,
+                        latestVersion = install.Version,
+                        launched = install.Launched,
+                    });
+                    if (install.Launched && !IsDisposed)
+                    {
+                        BeginInvoke(new Action(Close));
+                    }
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            PostWebMessage(new
+            {
+                type = "openad-update",
+                action = action == "install" ? "install-result" : "check-result",
+                ok = false,
+                currentVersion = updateService.CurrentVersion,
+                error = ex.Message,
+            });
+        }
+    }
+
+    private void PostWebMessage(object payload)
+    {
+        if (IsDisposed || webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(() => PostWebMessage(payload));
+            return;
+        }
+
+        webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(payload));
     }
 
     private void ApplyRuntimeBranding(JsonElement message)

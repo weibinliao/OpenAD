@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import SettingsPage from '../../pages/settings';
 import {
@@ -83,6 +83,30 @@ const adConnectionState = {
   activeProfileId: 'profile-1' as string | null,
 };
 
+function installUpdateBridge() {
+  const postMessage = jest.fn();
+  const listeners: Array<(event: MessageEvent<unknown>) => void> = [];
+  Object.defineProperty(window, 'chrome', {
+    configurable: true,
+    value: {
+      webview: {
+        postMessage,
+        addEventListener: (_type: 'message', listener: (event: MessageEvent<unknown>) => void) => listeners.push(listener),
+        removeEventListener: jest.fn(),
+      },
+    },
+  });
+
+  return {
+    postMessage,
+    emit(data: unknown) {
+      act(() => {
+        listeners.forEach((listener) => listener(new MessageEvent('message', { data })));
+      });
+    },
+  };
+}
+
 jest.mock('../../contexts/ADConnectionContext', () => ({
   useADConnection: () => ({
     config: { adServer: '', baseDN: '', username: '', password: '' },
@@ -124,6 +148,7 @@ describe('SettingsPage', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    delete (window as Window & { chrome?: unknown }).chrome;
   });
 
   test('renders stored AD connection profiles with default, active and test-status badges', async () => {
@@ -244,6 +269,76 @@ describe('SettingsPage', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Failed to fetch')).not.toBeInTheDocument();
     confirmSpy.mockRestore();
+  });
+
+  test('checks for desktop releases and offers a verified reinstall', async () => {
+    const bridge = installUpdateBridge();
+
+    render(<SettingsPage />);
+    await waitFor(() => expect(bridge.postMessage).toHaveBeenCalledWith({ type: 'openad-update', action: 'status' }));
+    bridge.postMessage.mockClear();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check for updates' }));
+    expect(bridge.postMessage).toHaveBeenCalledWith({ type: 'openad-update', action: 'check' });
+    bridge.emit({
+      type: 'openad-update',
+      action: 'check-result',
+      ok: true,
+      currentVersion: '1.0.0',
+      latestVersion: '1.0.1',
+      releaseName: 'OpenAD v1.0.1',
+      releaseNotes: 'Fixed update flow',
+      publishedAt: '2026-08-07T00:00:00Z',
+      releaseUrl: 'https://github.com/weibinliao/OpenAD/releases/tag/v1.0.1',
+      updateAvailable: true,
+    });
+
+    expect(await screen.findByText('OpenAD v1.0.1')).toBeInTheDocument();
+    expect(screen.getByText('Fixed update flow')).toBeInTheDocument();
+
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Download and reinstall' }));
+    expect(bridge.postMessage).toHaveBeenCalledWith({ type: 'openad-update', action: 'install' });
+    confirmSpy.mockRestore();
+  });
+
+  test('shows up-to-date and update-check error states', async () => {
+    const bridge = installUpdateBridge();
+    render(<SettingsPage />);
+
+    bridge.emit({
+      type: 'openad-update',
+      action: 'check-result',
+      ok: true,
+      currentVersion: '1.0.0',
+      latestVersion: '1.0.0',
+      updateAvailable: false,
+    });
+    expect(await screen.findByText('OpenAD is up to date.')).toBeInTheDocument();
+
+    bridge.emit({
+      type: 'openad-update',
+      action: 'check-result',
+      ok: false,
+      currentVersion: '1.0.0',
+      error: 'GitHub is unreachable',
+    });
+    expect(await screen.findByText('GitHub is unreachable')).toBeInTheDocument();
+  });
+
+  test('opens the release page when running outside the desktop host', async () => {
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+    render(<SettingsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check for updates' }));
+
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://github.com/weibinliao/OpenAD/releases/latest',
+      '_blank',
+      'noopener,noreferrer',
+    );
+    expect(await screen.findByText(/GitHub release page was opened/)).toBeInTheDocument();
+    openSpy.mockRestore();
   });
 
   test('keeps scan and report configuration out of system settings', async () => {

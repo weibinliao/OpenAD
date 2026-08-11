@@ -103,7 +103,9 @@ func (service *Service) ListRuns(page, pageSize int) ([]models.DirectorySyncRun,
 // and finally marks the run completed or failed.
 func (service *Service) Run(ctx context.Context, runID uuid.UUID, client Enumerator) error {
 	if err := service.run(ctx, runID, client); err != nil {
-		service.finishRun(runID, "failed", err.Error(), nil)
+		if finishErr := service.finishRun(runID, "failed", err.Error(), nil); finishErr != nil {
+			return fmt.Errorf("%w (also failed to finalize sync run: %v)", err, finishErr)
+		}
 		return err
 	}
 	return nil

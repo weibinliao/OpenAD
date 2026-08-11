@@ -23,7 +23,7 @@ type shareInfo1 struct {
 
 var netShareEnumProc = windows.NewLazySystemDLL("netapi32.dll").NewProc("NetShareEnum")
 
-func listUNCServerSharesWindows(serverRoot string) ([]gin.H, error) {
+func listUNCServerSharesWindows(serverRoot string, includeHidden bool) ([]gin.H, error) {
 	normalizedRoot := normalizeUNCPath(serverRoot)
 	if !isUNCServerRootPath(normalizedRoot) {
 		return nil, fmt.Errorf("UNC server share discovery requires a server root path")
@@ -68,7 +68,7 @@ func listUNCServerSharesWindows(serverRoot string) ([]gin.H, error) {
 				for index := uint32(0); index < entriesRead; index++ {
 					entry := (*shareInfo1)(unsafe.Pointer(uintptr(unsafe.Pointer(buffer)) + uintptr(index)*entrySize))
 					name := strings.TrimSpace(windows.UTF16PtrToString(entry.NetName))
-					if shouldSkipUNCShare(name, entry.Type) {
+					if shouldSkipUNCShare(name, entry.Type, includeHidden) {
 						continue
 					}
 
@@ -94,7 +94,7 @@ func listUNCServerSharesWindows(serverRoot string) ([]gin.H, error) {
 	return shareEntries, nil
 }
 
-func shouldSkipUNCShare(name string, shareType uint32) bool {
+func shouldSkipUNCShare(name string, shareType uint32, includeHidden bool) bool {
 	if name == "" {
 		return true
 	}
@@ -104,11 +104,15 @@ func shouldSkipUNCShare(name string, shareType uint32) bool {
 	}
 
 	upper := strings.ToUpper(name)
-	if upper == "ADMIN$" || upper == "IPC$" {
+	if upper == "ADMIN$" || upper == "IPC$" || upper == "PRINT$" || isDriveAdminShare(upper) {
 		return true
 	}
 
-	return strings.HasSuffix(upper, "$")
+	return !includeHidden && strings.HasSuffix(upper, "$")
+}
+
+func isDriveAdminShare(name string) bool {
+	return len(name) == 2 && name[0] >= 'A' && name[0] <= 'Z' && name[1] == '$'
 }
 
 func joinUNCSharePath(serverRoot, shareName string) string {

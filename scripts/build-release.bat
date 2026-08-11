@@ -1,12 +1,12 @@
 @echo off
 REM OpenAD - Windows Release Build Script
-REM Version: 1.0.0
+REM Version: 1.0.1
 
 setlocal
 set "ROOT_DIR=%~dp0.."
 set "GO_EXE=%ROOT_DIR%\tools\go\bin\go.exe"
 set "NPM_CMD=%ROOT_DIR%\tools\node\npm.cmd"
-set "RELEASE_VERSION=1.0.0"
+set "RELEASE_VERSION=1.0.1"
 set "RELEASE_DIR=%ROOT_DIR%\dist\OpenAD-Windows-v%RELEASE_VERSION%"
 
 if not exist "%GO_EXE%" (
@@ -30,9 +30,9 @@ echo [INFO] Building backend...
 pushd "%ROOT_DIR%\apps\backend"
 "%GO_EXE%" mod download
 if errorlevel 1 exit /b 1
-"%GO_EXE%" test .\...
+"%GO_EXE%" test -tags openad_desktop .\...
 if errorlevel 1 exit /b 1
-"%GO_EXE%" build -o "%ROOT_DIR%\dist\OpenAD.Server.exe" .\cmd\api
+"%GO_EXE%" build -tags openad_desktop -o "%ROOT_DIR%\dist\OpenAD.Server.exe" .\cmd\api
 if errorlevel 1 exit /b 1
 "%GO_EXE%" build -o "%ROOT_DIR%\dist\OpenAD.CLI.exe" .\cmd\cli
 if errorlevel 1 exit /b 1
@@ -67,26 +67,20 @@ xcopy /E /I /Y "%ROOT_DIR%\dist\web" "%RELEASE_DIR%\web"
 if errorlevel 1 exit /b 1
 
 REM Copy documentation
-copy "%ROOT_DIR%\docs\USER_MANUAL.md" "%RELEASE_DIR%\"
-if errorlevel 1 exit /b 1
-copy "%ROOT_DIR%\README.md" "%RELEASE_DIR%\"
-if errorlevel 1 exit /b 1
-copy "%ROOT_DIR%\docs\RELEASE_NOTES.md" "%RELEASE_DIR%\"
-if errorlevel 1 exit /b 1
-copy "%ROOT_DIR%\docs\WINDOWS_DEPLOYMENT.md" "%RELEASE_DIR%\"
-if errorlevel 1 exit /b 1
-copy "%ROOT_DIR%\docs\INSTALL_WINDOWS.md" "%RELEASE_DIR%\"
-if errorlevel 1 exit /b 1
-copy "%ROOT_DIR%\docs\START_HERE_INTERNAL.md" "%RELEASE_DIR%\START_HERE_INTERNAL.md"
-if errorlevel 1 exit /b 1
-copy "%ROOT_DIR%\docs\PROJECT_STRUCTURE.md" "%RELEASE_DIR%\PROJECT_STRUCTURE.md"
-if errorlevel 1 exit /b 1
-copy "%ROOT_DIR%\docs\RELEASE_MANIFEST.md" "%RELEASE_DIR%\RELEASE_MANIFEST.md"
-if errorlevel 1 exit /b 1
-copy "%ROOT_DIR%\docs\PERMISSION_EXPOSURE_ENGINE.md" "%RELEASE_DIR%\PERMISSION_EXPOSURE_ENGINE.md"
-if errorlevel 1 exit /b 1
-copy "%ROOT_DIR%\docs\FILE_ACCESS_ACTIVITY.md" "%RELEASE_DIR%\FILE_ACCESS_ACTIVITY.md"
-if errorlevel 1 exit /b 1
+for %%F in (
+  "docs\USER_MANUAL.md"
+  "README.md"
+  "docs\RELEASE_NOTES.md"
+  "docs\WINDOWS_DEPLOYMENT.md"
+  "docs\INSTALL_WINDOWS.md"
+  "docs\START_HERE_INTERNAL.md"
+  "docs\PROJECT_STRUCTURE.md"
+  "docs\RELEASE_MANIFEST.md"
+  "docs\PERMISSION_EXPOSURE_ENGINE.md"
+  "docs\FILE_ACCESS_ACTIVITY.md"
+) do (
+  if exist "%ROOT_DIR%\%%~F" copy /Y "%ROOT_DIR%\%%~F" "%RELEASE_DIR%\" >nul
+)
 
 REM Copy release scripts
 copy "%ROOT_DIR%\scripts\start-windows.bat" "%RELEASE_DIR%\"
@@ -101,7 +95,7 @@ copy "%ROOT_DIR%\scripts\install-startup-task.bat" "%RELEASE_DIR%\"
 if errorlevel 1 exit /b 1
 copy "%ROOT_DIR%\scripts\uninstall-startup-task.bat" "%RELEASE_DIR%\"
 if errorlevel 1 exit /b 1
-copy "%ROOT_DIR%\scripts\enable-lan-access.bat" "%RELEASE_DIR%\"
+copy "%ROOT_DIR%\scripts\disable-lan-access.bat" "%RELEASE_DIR%\"
 if errorlevel 1 exit /b 1
 copy "%ROOT_DIR%\scripts\verify-install.bat" "%RELEASE_DIR%\"
 if errorlevel 1 exit /b 1

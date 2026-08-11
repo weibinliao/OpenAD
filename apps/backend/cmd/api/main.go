@@ -35,15 +35,18 @@ func main() {
 }
 
 func resolveServerAddress() string {
-	host := strings.TrimSpace(os.Getenv("API_HOST"))
-	if host == "" {
-		host = strings.TrimSpace(os.Getenv("BIND_HOST"))
-	}
-	if host == "*" || host == "+" {
-		host = "0.0.0.0"
-	}
-	if host == "" {
-		host = "127.0.0.1"
+	host := "127.0.0.1"
+	if !desktopBuild {
+		host = strings.TrimSpace(os.Getenv("API_HOST"))
+		if host == "" {
+			host = strings.TrimSpace(os.Getenv("BIND_HOST"))
+		}
+		if host == "*" || host == "+" {
+			host = "0.0.0.0"
+		}
+		if host == "" {
+			host = "127.0.0.1"
+		}
 	}
 
 	for _, key := range []string{"API_PORT", "PORT"} {
@@ -85,7 +88,8 @@ func (application *application) handleListDirectories(context *gin.Context) {
 	}
 
 	if isUNCServerRootPath(requestPath) {
-		items, err := listUNCServerShares(requestPath)
+		includeHidden := strings.EqualFold(strings.TrimSpace(context.Query("include_hidden_shares")), "true")
+		items, err := listUNCServerShares(requestPath, includeHidden)
 		if err != nil {
 			if err == errUNCServerShareDiscoveryUnsupported {
 				context.JSON(http.StatusNotImplemented, gin.H{"error": err.Error()})

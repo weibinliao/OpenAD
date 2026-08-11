@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/weibinliao/OpenAD/internal/models"
@@ -27,6 +28,9 @@ var (
 	ErrPrincipalRequired = errors.New("principal is required")
 	// ErrPathRequired is returned when ByResource is called without a path prefix.
 	ErrPathRequired = errors.New("path_prefix is required")
+	// ErrUNCServerRootRequiresShare prevents a server-wide resource answer from
+	// silently using just one scanned share.
+	ErrUNCServerRootRequiresShare = errors.New("resource analysis requires a specific UNC share; select \\server\\share or use By User for all scanned shares below a server")
 	// ErrNoCompletedSyncRun means no completed directory sync snapshot exists yet.
 	ErrNoCompletedSyncRun = errors.New("no completed directory sync run exists; run a directory sync first")
 	// ErrSyncRunNotFound means the explicitly requested sync run id does not exist.
@@ -117,9 +121,25 @@ type AccessEntry struct {
 
 // SessionInfo describes one scan session consulted for the answer.
 type SessionInfo struct {
-	ID       uuid.UUID `json:"id"`
-	RootPath string    `json:"root_path"`
-	Status   string    `json:"status"`
+	ID           uuid.UUID  `json:"id"`
+	RootPath     string     `json:"root_path"`
+	Status       string     `json:"status"`
+	MaxDepth     int        `json:"max_depth"`
+	ErrorMessage string     `json:"error_message,omitempty"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+}
+
+// ScanCoverage summarizes the latest scan record for each distinct path in a
+// requested scope. It describes recorded scan attempts, not the complete
+// server share inventory, because discovery results are not persisted yet.
+type ScanCoverage struct {
+	Total      int           `json:"total"`
+	Completed  int           `json:"completed"`
+	Failed     int           `json:"failed"`
+	Cancelled  int           `json:"cancelled"`
+	InProgress int           `json:"in_progress"`
+	Sessions   []SessionInfo `json:"sessions"`
 }
 
 // --- ByUser --------------------------------------------------------------
@@ -129,6 +149,9 @@ type SessionInfo struct {
 type ByUserInput struct {
 	// Principal is a SID, sAMAccountName or UPN.
 	Principal string
+	// PathPrefix optionally limits the answer to a scanned path range. A UNC
+	// server root includes every completed share scan below that server.
+	PathPrefix string
 	// SyncRunID pins the AD snapshot; zero value means latest completed run.
 	SyncRunID uuid.UUID
 	// SessionIDs pin the scan sessions; empty means the latest completed
@@ -173,14 +196,16 @@ type ByUserCounts struct {
 
 // ByUserResult is the full "what can this principal access" answer.
 type ByUserResult struct {
-	SyncRunID  uuid.UUID         `json:"sync_run_id"`
-	User       UserInfo          `json:"user"`
-	GroupCount int               `json:"group_count"`
-	Groups     []GroupMembership `json:"groups"`
-	Sessions   []SessionInfo     `json:"sessions"`
-	Entries    []AccessEntry     `json:"entries"`
-	ByRootPath []RootPathEntries `json:"by_root_path"`
-	Counts     ByUserCounts      `json:"counts"`
+	SyncRunID    uuid.UUID         `json:"sync_run_id"`
+	PathPrefix   string            `json:"path_prefix,omitempty"`
+	User         UserInfo          `json:"user"`
+	GroupCount   int               `json:"group_count"`
+	Groups       []GroupMembership `json:"groups"`
+	Sessions     []SessionInfo     `json:"sessions"`
+	ScanCoverage *ScanCoverage     `json:"scan_coverage,omitempty"`
+	Entries      []AccessEntry     `json:"entries"`
+	ByRootPath   []RootPathEntries `json:"by_root_path"`
+	Counts       ByUserCounts      `json:"counts"`
 }
 
 // ByUser answers "what can this principal access, and why?".
@@ -236,13 +261,27 @@ func (service *Service) ByUser(input ByUserInput) (*ByUserResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	pathPrefix := normalizePath(input.PathPrefix)
+	if pathPrefix != "" {
+		sessions = filterSessionsForPathPrefix(sessions, pathPrefix)
+		if len(sessions) == 0 {
+			return nil, ErrNoMatchingSession
+		}
+	}
+	var scanCoverage *ScanCoverage
+	if pathPrefix != "" {
+		scanCoverage, err = service.resolveScanCoverage(pathPrefix)
+		if err != nil {
+			return nil, err
+		}
+	}
 	sessionByID := make(map[uuid.UUID]models.ScanSession, len(sessions))
 	sessionIDs := make([]uuid.UUID, 0, len(sessions))
 	sessionInfos := make([]SessionInfo, 0, len(sessions))
 	for _, session := range sessions {
 		sessionByID[session.ID] = session
 		sessionIDs = append(sessionIDs, session.ID)
-		sessionInfos = append(sessionInfos, SessionInfo{ID: session.ID, RootPath: session.RootPath, Status: session.Status})
+		sessionInfos = append(sessionInfos, sessionInfo(session))
 	}
 
 	trusteeSIDs := append([]string{user.SID}, groupSIDs...)
@@ -255,9 +294,13 @@ func (service *Service) ByUser(input ByUserInput) (*ByUserResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load permissions: %w", err)
 	}
+	if pathPrefix != "" {
+		permissions = filterPermissionsForPathPrefix(permissions, pathPrefix)
+	}
 
 	result := &ByUserResult{
-		SyncRunID: run.ID,
+		SyncRunID:  run.ID,
+		PathPrefix: pathPrefix,
 		User: UserInfo{
 			SID:            user.SID,
 			SAMAccountName: user.SAMAccountName,
@@ -267,11 +310,12 @@ func (service *Service) ByUser(input ByUserInput) (*ByUserResult, error) {
 			Department:     user.Department,
 			Enabled:        user.Enabled,
 		},
-		GroupCount: len(groups),
-		Groups:     groups,
-		Sessions:   sessionInfos,
-		Entries:    make([]AccessEntry, 0, len(permissions)),
-		ByRootPath: make([]RootPathEntries, 0),
+		GroupCount:   len(groups),
+		Groups:       groups,
+		Sessions:     sessionInfos,
+		ScanCoverage: scanCoverage,
+		Entries:      make([]AccessEntry, 0, len(permissions)),
+		ByRootPath:   make([]RootPathEntries, 0),
 	}
 
 	groupedIndex := make(map[uuid.UUID]int)
@@ -337,6 +381,91 @@ func (service *Service) ByUser(input ByUserInput) (*ByUserResult, error) {
 	}
 
 	return result, nil
+}
+
+func sessionInfo(session models.ScanSession) SessionInfo {
+	return SessionInfo{
+		ID:           session.ID,
+		RootPath:     session.RootPath,
+		Status:       session.Status,
+		MaxDepth:     session.MaxDepth,
+		ErrorMessage: session.ErrorMessage,
+		StartedAt:    session.StartedAt,
+		FinishedAt:   session.FinishedAt,
+	}
+}
+
+func (service *Service) resolveScanCoverage(pathPrefix string) (*ScanCoverage, error) {
+	normalizedPrefix := normalizePath(pathPrefix)
+	if normalizedPrefix == "" {
+		return nil, nil
+	}
+
+	var records []models.ScanSession
+	if err := service.db.Order("started_at DESC").Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("load scan coverage: %w", err)
+	}
+
+	coverage := &ScanCoverage{Sessions: make([]SessionInfo, 0, len(records))}
+	seenRoots := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		if !pathsRelated(record.RootPath, normalizedPrefix) {
+			continue
+		}
+
+		root := normalizePath(record.RootPath)
+		if _, seen := seenRoots[root]; seen {
+			continue
+		}
+		seenRoots[root] = struct{}{}
+
+		coverage.Sessions = append(coverage.Sessions, sessionInfo(record))
+		switch strings.ToLower(strings.TrimSpace(record.Status)) {
+		case "completed":
+			coverage.Completed++
+		case "failed":
+			coverage.Failed++
+		case "cancelled", "canceled":
+			coverage.Cancelled++
+		default:
+			coverage.InProgress++
+		}
+	}
+
+	coverage.Total = len(coverage.Sessions)
+	if coverage.Total == 0 {
+		return nil, nil
+	}
+	sort.Slice(coverage.Sessions, func(left, right int) bool {
+		return strings.ToLower(coverage.Sessions[left].RootPath) < strings.ToLower(coverage.Sessions[right].RootPath)
+	})
+	return coverage, nil
+}
+
+func filterSessionsForPathPrefix(sessions []models.ScanSession, pathPrefix string) []models.ScanSession {
+	filtered := make([]models.ScanSession, 0, len(sessions))
+	for _, session := range sessions {
+		if pathsRelated(session.RootPath, pathPrefix) {
+			filtered = append(filtered, session)
+		}
+	}
+	return filtered
+}
+
+func filterPermissionsForPathPrefix(permissions []models.Permission, pathPrefix string) []models.Permission {
+	filtered := make([]models.Permission, 0, len(permissions))
+	for _, permission := range permissions {
+		if isPathWithinPrefix(permission.Path, pathPrefix) {
+			filtered = append(filtered, permission)
+		}
+	}
+	return filtered
+}
+
+func isPathWithinPrefix(path, pathPrefix string) bool {
+	normalizedPath := normalizePath(path)
+	normalizedPrefix := normalizePath(pathPrefix)
+	return normalizedPath == normalizedPrefix || strings.HasPrefix(normalizedPath, normalizedPrefix+"\\")
 }
 
 // --- ByResource -----------------------------------------------------------
@@ -406,6 +535,9 @@ func (service *Service) ByResource(input ByResourceInput) (*ByResourceResult, er
 	if pathPrefix == "" {
 		return nil, ErrPathRequired
 	}
+	if isUNCServerRoot(pathPrefix) {
+		return nil, ErrUNCServerRootRequiresShare
+	}
 
 	run, err := service.resolveSyncRun(input.SyncRunID)
 	if err != nil {
@@ -462,7 +594,7 @@ func (service *Service) ByResource(input ByResourceInput) (*ByResourceResult, er
 
 	result := &ByResourceResult{
 		PathPrefix: pathPrefix,
-		Session:    SessionInfo{ID: session.ID, RootPath: session.RootPath, Status: session.Status},
+		Session:    sessionInfo(*session),
 		SyncRunID:  run.ID,
 		Principals: make([]ResourcePrincipal, 0),
 		ACEs:       make([]ResourceACE, 0, len(permissions)),
@@ -1044,6 +1176,16 @@ func pathsRelated(rootPath, queryPath string) bool {
 		return true
 	}
 	return strings.HasPrefix(query, root+"\\") || strings.HasPrefix(root, query+"\\")
+}
+
+func isUNCServerRoot(path string) bool {
+	normalized := normalizePath(path)
+	if !strings.HasPrefix(normalized, `\\`) {
+		return false
+	}
+
+	parts := strings.Split(strings.TrimPrefix(normalized, `\\`), `\`)
+	return len(parts) == 1 && strings.TrimSpace(parts[0]) != ""
 }
 
 func normalizePath(path string) string {

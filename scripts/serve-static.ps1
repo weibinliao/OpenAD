@@ -12,8 +12,8 @@ $prefixHost = $HostName.Trim()
 if ([string]::IsNullOrWhiteSpace($prefixHost)) {
     $prefixHost = 'localhost'
 }
-if ($prefixHost -eq '*' -or $prefixHost -eq '0.0.0.0') {
-    $prefixHost = '+'
+if ($prefixHost -ne 'localhost' -and $prefixHost -ne '127.0.0.1') {
+    throw 'LAN binding is disabled for the OpenAD desktop static server. Use localhost or 127.0.0.1.'
 }
 
 $listeners = @()

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/weibinliao/OpenAD/internal/database"
-	"github.com/weibinliao/OpenAD/internal/models"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weibinliao/OpenAD/internal/database"
+	"github.com/weibinliao/OpenAD/internal/models"
 	"gorm.io/gorm"
 )
 
@@ -133,6 +133,10 @@ func TestAccessByUserEndpoint(t *testing.T) {
 				GroupName string `json:"group_name"`
 			} `json:"why"`
 		} `json:"entries"`
+		ScanCoverage struct {
+			Total     int `json:"total"`
+			Completed int `json:"completed"`
+		} `json:"scan_coverage"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.Equal(t, "S-1-5-21-9-9-9-1001", response.User.SID)
@@ -141,6 +145,17 @@ func TestAccessByUserEndpoint(t *testing.T) {
 	assert.Equal(t, `D:\Share\Sales`, response.Entries[0].Path)
 	assert.Equal(t, "group", response.Entries[0].Why.Kind)
 	assert.Equal(t, "Sales", response.Entries[0].Why.GroupName)
+
+	// A by-user query can be restricted to a scanned server or share path.
+	recorder = postJSON(t, router, "/api/access/by-user", jsonBody{
+		"principal":   "alice",
+		"path_prefix": `D:\Share`,
+	})
+	assert.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.Contains(t, recorder.Body.String(), "\"path_prefix\":\"d:\\\\share\"")
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.Equal(t, 1, response.ScanCoverage.Total)
+	assert.Equal(t, 1, response.ScanCoverage.Completed)
 }
 
 func TestAccessByResourceEndpoint(t *testing.T) {
@@ -156,6 +171,12 @@ func TestAccessByResourceEndpoint(t *testing.T) {
 	recorder = postJSON(t, router, "/api/access/by-resource", jsonBody{"path_prefix": `Z:\Nowhere`})
 	assert.Equal(t, http.StatusConflict, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "scan")
+
+	// A server root can cover several independent share snapshots, so it must
+	// not silently return whichever completed share happened to be newest.
+	recorder = postJSON(t, router, "/api/access/by-resource", jsonBody{"path_prefix": `\\filesrv`})
+	assert.Equal(t, http.StatusConflict, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "specific UNC share")
 
 	// Happy path: Sales expands to alice, Everyone stays as unresolved.
 	recorder = postJSON(t, router, "/api/access/by-resource", jsonBody{"path_prefix": `D:\Share`})

@@ -26,6 +26,7 @@ type scanRunner interface {
 
 type historyReader interface {
 	ListSessions(filter historyservice.SessionListFilter) (*historyservice.SessionListResponse, error)
+	DeleteSessions(ids []string, allTerminal bool) (*historyservice.DeleteSessionsResponse, error)
 	GetSession(id string) (*models.ScanSession, error)
 	GetSessionBundle(id string) (*historyservice.SessionBundleResponse, error)
 	ListSessionPermissions(id string, filter historyservice.PermissionListFilter) (*historyservice.PermissionListResponse, error)
@@ -205,6 +206,10 @@ func handleHistoryError(context *gin.Context, err error) {
 		context.JSON(http.StatusBadRequest, gin.H{"error": "invalid session id"})
 	case errors.Is(err, historyservice.ErrSessionNotFound):
 		context.JSON(http.StatusNotFound, gin.H{"error": "scan session not found"})
+	case errors.Is(err, historyservice.ErrSessionIDsRequired), errors.Is(err, historyservice.ErrDeleteSelectionOnly):
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, historyservice.ErrSessionActive):
+		context.JSON(http.StatusConflict, gin.H{"error": "running scan sessions cannot be deleted; stop the scan first"})
 	case errors.Is(err, historyservice.ErrDatabaseUnavailable):
 		context.JSON(http.StatusServiceUnavailable, gin.H{"error": "database is not initialized"})
 	default:

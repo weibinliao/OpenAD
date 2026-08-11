@@ -90,6 +90,10 @@ func TestResolveServerAddressFallsBackToDefaultWhenInvalid(t *testing.T) {
 }
 
 func TestResolveServerAddressPreservesExplicitAllInterfaceHosts(t *testing.T) {
+	if desktopBuild {
+		t.Skip("desktop builds intentionally ignore host-binding environment variables")
+	}
+
 	t.Setenv("BIND_HOST", "")
 	t.Setenv("API_PORT", "18080")
 	t.Setenv("PORT", "")
@@ -201,6 +205,29 @@ func TestEndpointProtectionMiddlewareRateLimitsProtectedRoutes(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, first.Code)
 
 	second := performJSONRequestToRouter(t, router, "/api/scan", ScanRequest{})
+	assert.Equal(t, http.StatusTooManyRequests, second.Code)
+	assert.Contains(t, second.Body.String(), "rate limit exceeded")
+}
+
+func TestEndpointProtectionMiddlewareRateLimitsSessionDeletion(t *testing.T) {
+	originalLimiter := endpointLimiter
+	endpointLimiter = newWindowRateLimiter(1, time.Hour)
+	defer func() {
+		endpointLimiter = originalLimiter
+	}()
+
+	router := newTestRouter(applicationDependencies{
+		history: &stubHistoryService{deleteSessionsResponse: &historyservice.DeleteSessionsResponse{}},
+	})
+
+	first := performJSONRequestWithMethodToRouter(t, router, http.MethodDelete, "/api/sessions", jsonBody{
+		"all_terminal": true,
+	})
+	assert.Equal(t, http.StatusOK, first.Code)
+
+	second := performJSONRequestWithMethodToRouter(t, router, http.MethodDelete, "/api/sessions", jsonBody{
+		"all_terminal": true,
+	})
 	assert.Equal(t, http.StatusTooManyRequests, second.Code)
 	assert.Contains(t, second.Body.String(), "rate limit exceeded")
 }
@@ -823,6 +850,31 @@ func TestListSessionsEndpointHandlesValidationAndServiceErrors(t *testing.T) {
 	})
 }
 
+func TestDeleteSessionsEndpointForwardsSelectionAndAllTerminalMode(t *testing.T) {
+	firstID := uuid.NewString()
+	secondID := uuid.NewString()
+	history := &stubHistoryService{
+		deleteSessionsResponse: &historyservice.DeleteSessionsResponse{Deleted: 2},
+	}
+	router := newTestRouter(applicationDependencies{history: history})
+
+	recorder := performJSONRequestWithMethodToRouter(t, router, http.MethodDelete, "/api/sessions", jsonBody{
+		"session_ids": []string{firstID, secondID},
+	})
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, []string{firstID, secondID}, history.lastDeleteSessionIDs)
+	assert.False(t, history.lastDeleteAllTerminal)
+	assert.Contains(t, recorder.Body.String(), `"deleted":2`)
+
+	recorder = performJSONRequestWithMethodToRouter(t, router, http.MethodDelete, "/api/sessions", jsonBody{
+		"all_terminal": true,
+	})
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Empty(t, history.lastDeleteSessionIDs)
+	assert.True(t, history.lastDeleteAllTerminal)
+}
+
 func TestGetSessionEndpointHandlesSuccessAndNotFound(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		sessionID := uuid.NewString()
@@ -1183,6 +1235,10 @@ type stubHistoryService struct {
 	listSessionsResponse   *historyservice.SessionListResponse
 	listSessionsErr        error
 	lastListSessionsFilter historyservice.SessionListFilter
+	deleteSessionsResponse *historyservice.DeleteSessionsResponse
+	deleteSessionsErr      error
+	lastDeleteSessionIDs   []string
+	lastDeleteAllTerminal  bool
 
 	getSessionResponse *models.ScanSession
 	getSessionErr      error
@@ -1206,6 +1262,12 @@ type stubHistoryService struct {
 func (service *stubHistoryService) ListSessions(filter historyservice.SessionListFilter) (*historyservice.SessionListResponse, error) {
 	service.lastListSessionsFilter = filter
 	return service.listSessionsResponse, service.listSessionsErr
+}
+
+func (service *stubHistoryService) DeleteSessions(ids []string, allTerminal bool) (*historyservice.DeleteSessionsResponse, error) {
+	service.lastDeleteSessionIDs = append([]string(nil), ids...)
+	service.lastDeleteAllTerminal = allTerminal
+	return service.deleteSessionsResponse, service.deleteSessionsErr
 }
 
 func (service *stubHistoryService) GetSession(id string) (*models.ScanSession, error) {
@@ -1344,8 +1406,9 @@ func TestListDirectoriesEndpointReturnsChildren(t *testing.T) {
 
 func TestListDirectoriesEndpointDiscoversUNCServerShares(t *testing.T) {
 	originalLister := listUNCServerShares
-	listUNCServerShares = func(serverRoot string) ([]gin.H, error) {
+	listUNCServerShares = func(serverRoot string, includeHidden bool) ([]gin.H, error) {
 		require.Contains(t, []string{`\\server`, `\\192.0.2.10`}, serverRoot)
+		require.False(t, includeHidden)
 		return []gin.H{
 			{"name": "IT_dept", "path": serverRoot + `\IT_dept`},
 			{"name": "software", "path": serverRoot + `\software`},
@@ -1370,6 +1433,27 @@ func TestListDirectoriesEndpointDiscoversUNCServerShares(t *testing.T) {
 			assert.Contains(t, body, `"path":"`+strings.ReplaceAll(serverRoot+`\software`, `\`, `\\`)+`"`)
 		})
 	}
+}
+
+func TestListDirectoriesEndpointCanIncludeHiddenShares(t *testing.T) {
+	originalLister := listUNCServerShares
+	listUNCServerShares = func(serverRoot string, includeHidden bool) ([]gin.H, error) {
+		assert.Equal(t, `\\server`, serverRoot)
+		assert.True(t, includeHidden)
+		return []gin.H{{"name": "Finance$", "path": serverRoot + `\Finance$`}}, nil
+	}
+	t.Cleanup(func() {
+		listUNCServerShares = originalLister
+	})
+
+	router := newTestRouter(applicationDependencies{})
+	target := "/api/fs/directories?path=" + url.QueryEscape(`\\server`) + "&include_hidden_shares=true"
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, target, nil)
+	router.ServeHTTP(recorder, request)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `Finance$`)
 }
 
 func TestADGroupEndpointsHandleSuccessAndFailures(t *testing.T) {

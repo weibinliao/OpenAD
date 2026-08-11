@@ -3,10 +3,15 @@ package main
 import (
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/weibinliao/OpenAD/internal/comparisonservice"
 	"github.com/weibinliao/OpenAD/internal/historyservice"
-	"github.com/gin-gonic/gin"
 )
+
+type DeleteSessionsRequest struct {
+	SessionIDs  []string `json:"session_ids"`
+	AllTerminal bool     `json:"all_terminal"`
+}
 
 type CompareRequest struct {
 	BaselineSessionID string `json:"baseline_session_id" binding:"required"`
@@ -51,6 +56,22 @@ func (application *application) handleListSessions(context *gin.Context) {
 		Status:   context.Query("status"),
 		RootPath: context.Query("root_path"),
 	})
+	if err != nil {
+		handleHistoryError(context, err)
+		return
+	}
+
+	context.JSON(http.StatusOK, response)
+}
+
+func (application *application) handleDeleteSessions(context *gin.Context) {
+	var request DeleteSessionsRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	response, err := application.history.DeleteSessions(request.SessionIDs, request.AllTerminal)
 	if err != nil {
 		handleHistoryError(context, err)
 		return

@@ -1,6 +1,6 @@
 {
   "name": "openad-web",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3010",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",

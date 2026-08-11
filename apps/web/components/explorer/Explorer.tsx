@@ -280,7 +280,7 @@ export default function Explorer() {
             label={activeProfile ? activeProfile.name : d.explorer.title}
             icon={Zap}
           />
-          <div className="flex-1 overflow-y-auto py-1.5">
+          <div className="flex-1 overflow-y-auto py-1.5" role="tree" aria-label={d.explorer.title}>
             {/* AD branch */}
             <TreeRootRow
               icon={Zap}
@@ -517,9 +517,27 @@ function TreeNodeRow({
         )}
         style={{ paddingLeft: `${depth * 14 + 4}px` }}
         onClick={() => onSelect(node)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelect(node);
+            return;
+          }
+          if (event.key === 'ArrowRight' && node.hasChildren && !branch?.expanded) {
+            event.preventDefault();
+            onToggle(node);
+            return;
+          }
+          if (event.key === 'ArrowLeft' && node.hasChildren && branch?.expanded) {
+            event.preventDefault();
+            onToggle(node);
+          }
+        }}
         title={node.id}
         role="treeitem"
+        tabIndex={0}
         aria-selected={selected}
+        aria-expanded={node.hasChildren ? Boolean(branch?.expanded) : undefined}
       >
         {node.hasChildren ? (
           <button
@@ -1039,6 +1057,11 @@ function GroupAnswer({ node, connectionId }: { node: ExplorerNode; connectionId:
           <p className="text-2xs uppercase tracking-wide text-fg-muted">
             {d.explorer.members} · <b className="tabular-nums">{members.length}</b>
           </p>
+          {members.length > 100 ? (
+            <p className="text-2xs text-fg-faint">
+              {d.explorer.showingMembers.replace('{visible}', '100').replace('{total}', String(members.length))}
+            </p>
+          ) : null}
           <ul className="divide-y divide-line/60 overflow-hidden rounded-md border border-line">
             {members.slice(0, 100).map((member) => (
               <li key={member.dn} className="flex items-center gap-2 px-3 py-1.5">
@@ -1303,6 +1326,11 @@ function ResourceAnswer({ node }: { node: ExplorerNode }) {
       ) : aces && aces.length > 0 ? (
         <div>
           <p className="mb-1.5 text-2xs uppercase tracking-wide text-fg-muted">{d.explorer.aceFallbackTitle}</p>
+          {aces.length > 60 ? (
+            <p className="mb-1 text-2xs text-fg-faint">
+              {d.explorer.showingMembers.replace('{visible}', '60').replace('{total}', String(aces.length))}
+            </p>
+          ) : null}
           <ul className="divide-y divide-line/60 overflow-hidden rounded-md border border-line">
             {aces.slice(0, 60).map((ace, index) => (
               <li key={index} className="flex items-center gap-2 px-3 py-1.5">
@@ -1330,6 +1358,7 @@ function SyncNudge({ connectionId, detail }: { connectionId: string | null; deta
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
   const timerRef = useRef<number | null>(null);
+  const pollAttemptsRef = useRef(0);
 
   useEffect(() => () => {
     if (timerRef.current) window.clearInterval(timerRef.current);
@@ -1348,7 +1377,17 @@ function SyncNudge({ connectionId, detail }: { connectionId: string | null; deta
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || d.common.error);
       // Poll until the run finishes, then reload so the answer panes refresh.
+      pollAttemptsRef.current = 0;
+      if (timerRef.current) window.clearInterval(timerRef.current);
       timerRef.current = window.setInterval(async () => {
+        pollAttemptsRef.current += 1;
+        if (pollAttemptsRef.current > 600) {
+          if (timerRef.current) window.clearInterval(timerRef.current);
+          timerRef.current = null;
+          setRunning(false);
+          setMessage(d.explorer.syncTimeout);
+          return;
+        }
         const runsResponse = await fetch(`${apiBase()}/api/ad/sync/runs?page=1&page_size=1`).catch(() => null);
         const runs = runsResponse ? await runsResponse.json().catch(() => ({})) : {};
         const run = Array.isArray(runs.items) ? runs.items[0] : null;
@@ -1415,6 +1454,7 @@ function ConnectionCard({ profile }: { profile: { id: string; name: string; serv
   const d = useDict();
   const [run, setRun] = useState<{ status: string; user_count: number; group_count: number; finished_at?: string; started_at: string } | null>(null);
   const [starting, setStarting] = useState(false);
+  const [pollingTimedOut, setPollingTimedOut] = useState(false);
 
   const loadRun = useCallback(async () => {
     try {
@@ -1432,8 +1472,16 @@ function ConnectionCard({ profile }: { profile: { id: string; name: string; serv
 
   useEffect(() => {
     if (run?.status !== 'running') return;
+    setPollingTimedOut(false);
     const timer = window.setInterval(loadRun, 3000);
-    return () => window.clearInterval(timer);
+    const timeout = window.setTimeout(() => {
+      window.clearInterval(timer);
+      setPollingTimedOut(true);
+    }, 30 * 60 * 1000);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(timeout);
+    };
   }, [loadRun, run?.status]);
 
   const startSync = useCallback(async () => {
@@ -1485,6 +1533,7 @@ function ConnectionCard({ profile }: { profile: { id: string; name: string; serv
         ) : (
           <p className="mt-2 text-2xs text-fg-muted">{d.identity.syncNever}</p>
         )}
+        {pollingTimedOut ? <p className="mt-2 text-2xs text-danger">{d.identity.syncLoadFailed}</p> : null}
         <Button size="sm" variant="outline" className="mt-2.5 w-full" onClick={startSync} loading={starting || running}>
           <RefreshCcw className="h-3 w-3" /> {running ? d.identity.syncRunning : d.identity.syncNow}
         </Button>

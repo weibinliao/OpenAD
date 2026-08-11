@@ -41,24 +41,12 @@ API: 18080
 开发 Web: 3010
 ```
 
-桌面包默认只监听本机回环地址。不要把这些端口直接暴露到公网。LAN 访问属于显式运维行为，启用前必须评估产品尚未提供登录和 RBAC 的限制。
-
-### LAN 浏览器访问
-
-兼容浏览器模式同样默认只监听 `127.0.0.1`。需要从可信管理网络访问时：
-
-1. 以管理员身份运行 `scripts\enable-lan-access.bat`，添加 `3010` 与 `18080` 的入站防火墙规则。
-2. 把脚本输出命令中的 `your-host-ip` 替换为主机实际 LAN 地址。
-3. 执行该命令。它只为本次启动设置 `API_HOST=0.0.0.0`、`WEB_HOST=0.0.0.0`，并把 HTTP CORS 与 WebSocket Origin 精确限制到所填的 Web 地址。
-
-脚本不会保存全网卡绑定；进程停止后，下一次普通启动仍回到 `127.0.0.1`。防火墙规则是持久的，不再需要时可在管理员命令提示符中删除：
+桌面包强制只监听本机回环地址。正式桌面包不支持 LAN 浏览器访问，也不会接受
+`0.0.0.0`、`*` 或 `+` 绑定参数。若旧版本曾启用局域网模式，请以管理员身份运行：
 
 ```bat
-netsh advfirewall firewall delete rule name="OpenAD Web"
-netsh advfirewall firewall delete rule name="OpenAD API"
+scripts\disable-lan-access.bat
 ```
-
-全网卡模式会在启动输出中显示安全警告。OpenAD 当前没有产品级登录或 RBAC，不能用于公网或不可信网络。
 
 ### 启动故障检查
 
@@ -99,24 +87,13 @@ Packaged Web: 43110
 Development Web: 3010
 ```
 
-The desktop package listens on loopback by default. Do not expose these ports directly to the public internet. LAN access is an explicit operational decision and must account for the absence of product login and RBAC.
-
-### LAN Browser Access
-
-Compatibility browser mode also binds only to `127.0.0.1` by default. For access from a trusted administration network:
-
-1. Run `scripts\enable-lan-access.bat` as Administrator to add inbound firewall rules for ports `3010` and `18080`.
-2. Replace `your-host-ip` in the printed command with the host's actual LAN address.
-3. Run that command. It sets `API_HOST=0.0.0.0` and `WEB_HOST=0.0.0.0` only for that launch and constrains HTTP CORS and WebSocket Origin to the supplied Web address.
-
-The script does not persist the all-interface binding, so the next normal launch returns to `127.0.0.1` after the processes stop. Firewall rules are persistent; remove them from an elevated Command Prompt when no longer needed:
+The desktop package is forced to loopback-only binding. LAN browser access is not supported by the
+shipping desktop package, and its launchers reject `0.0.0.0`, `*`, and `+` host values. If an older
+release enabled LAN mode, run the following as Administrator:
 
 ```bat
-netsh advfirewall firewall delete rule name="OpenAD Web"
-netsh advfirewall firewall delete rule name="OpenAD API"
+scripts\disable-lan-access.bat
 ```
-
-All-interface mode prints a startup security warning. OpenAD currently has no product-level login or RBAC and must not be exposed to the public internet or an untrusted network.
 
 ### Startup Troubleshooting
 

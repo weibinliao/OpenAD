@@ -4,14 +4,15 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/weibinliao/OpenAD/internal/access"
-	"github.com/weibinliao/OpenAD/internal/database"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/weibinliao/OpenAD/internal/access"
+	"github.com/weibinliao/OpenAD/internal/database"
 )
 
 type accessByUserRequest struct {
 	Principal  string   `json:"principal" binding:"required"`
+	PathPrefix string   `json:"path_prefix"`
 	SyncRunID  string   `json:"sync_run_id"`
 	SessionIDs []string `json:"session_ids"`
 }
@@ -51,6 +52,8 @@ func respondAccessError(context *gin.Context, err error) {
 		context.JSON(http.StatusConflict, gin.H{"error": "no completed scan sessions exist yet; run a folder scan first"})
 	case errors.Is(err, access.ErrNoMatchingSession):
 		context.JSON(http.StatusConflict, gin.H{"error": "no completed scan session covers this path; scan the folder first or pass an explicit session_id"})
+	case errors.Is(err, access.ErrUNCServerRootRequiresShare):
+		context.JSON(http.StatusConflict, gin.H{"error": "resource analysis requires a specific UNC share; select \\server\\share or use By User for all scanned shares below a server"})
 	default:
 		context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
@@ -69,7 +72,10 @@ func (application *application) handleAccessByUser(context *gin.Context) {
 		return
 	}
 
-	input := access.ByUserInput{Principal: request.Principal}
+	input := access.ByUserInput{
+		Principal:  request.Principal,
+		PathPrefix: request.PathPrefix,
+	}
 	if request.SyncRunID != "" {
 		runID, err := uuid.Parse(request.SyncRunID)
 		if err != nil {

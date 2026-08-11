@@ -25,6 +25,9 @@ var (
 	ErrDatabaseUnavailable = errors.New("database is not initialized")
 	ErrInvalidSessionID    = errors.New("invalid session id")
 	ErrSessionNotFound     = errors.New("scan session not found")
+	ErrSessionIDsRequired  = errors.New("at least one session id is required")
+	ErrSessionActive       = errors.New("running scan sessions cannot be deleted")
+	ErrDeleteSelectionOnly = errors.New("session ids cannot be combined with all_terminal")
 )
 
 type repository interface {
@@ -96,6 +99,10 @@ type SessionBundleResponse struct {
 	IdentityResolution identityresolution.Metadata `json:"identity_resolution"`
 }
 
+type DeleteSessionsResponse struct {
+	Deleted int `json:"deleted"`
+}
+
 func New() *Service {
 	return NewWithRepositoryAndDatabase(&databaseRepository{}, database.DB)
 }
@@ -161,6 +168,149 @@ func (service *Service) GetSession(id string) (*models.ScanSession, error) {
 	}
 
 	return session, nil
+}
+
+// DeleteSessions removes terminal scan sessions and their persisted permission
+// evidence in one transaction. Running sessions are intentionally protected so
+// the scan worker and history cleanup cannot race each other.
+func (service *Service) DeleteSessions(rawIDs []string, allTerminal bool) (*DeleteSessionsResponse, error) {
+	if service.db == nil {
+		return nil, ErrDatabaseUnavailable
+	}
+	if allTerminal && len(rawIDs) > 0 {
+		return nil, ErrDeleteSelectionOnly
+	}
+
+	if allTerminal {
+		return service.deleteAllTerminalSessions()
+	}
+	if len(rawIDs) == 0 {
+		return nil, ErrSessionIDsRequired
+	}
+
+	sessionIDs := make([]uuid.UUID, 0, len(rawIDs))
+	seen := make(map[uuid.UUID]struct{}, len(rawIDs))
+	for _, rawID := range rawIDs {
+		id, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidSessionID, strings.TrimSpace(rawID))
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		sessionIDs = append(sessionIDs, id)
+	}
+
+	if len(sessionIDs) == 0 {
+		return &DeleteSessionsResponse{}, nil
+	}
+
+	stringIDs := sessionIDStrings(sessionIDs)
+	var sessions []models.ScanSession
+	if err := service.db.Where("id IN ?", stringIDs).Find(&sessions).Error; err != nil {
+		return nil, err
+	}
+	if len(sessions) != len(sessionIDs) {
+		return nil, ErrSessionNotFound
+	}
+	for _, session := range sessions {
+		if strings.EqualFold(strings.TrimSpace(session.Status), "running") {
+			return nil, fmt.Errorf("%w: %s", ErrSessionActive, session.RootPath)
+		}
+	}
+
+	transaction := service.db.Begin()
+	if transaction.Error != nil {
+		return nil, transaction.Error
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			transaction.Rollback()
+		}
+	}()
+
+	if err := transaction.Where("scan_session_id IN ?", stringIDs).Delete(&models.Permission{}).Error; err != nil {
+		return nil, err
+	}
+	if err := transaction.Where("scan_session_id IN ?", stringIDs).Delete(&models.PermissionChange{}).Error; err != nil {
+		return nil, err
+	}
+	if err := transaction.Model(&models.RiskFinding{}).
+		Where("last_session_id IN ?", stringIDs).
+		Update("last_session_id", "").Error; err != nil {
+		return nil, err
+	}
+	if err := transaction.Where("id IN ?", stringIDs).Delete(&models.ScanSession{}).Error; err != nil {
+		return nil, err
+	}
+	if err := transaction.Commit().Error; err != nil {
+		return nil, err
+	}
+	committed = true
+
+	return &DeleteSessionsResponse{Deleted: len(sessionIDs)}, nil
+}
+
+func (service *Service) deleteAllTerminalSessions() (*DeleteSessionsResponse, error) {
+	transaction := service.db.Begin()
+	if transaction.Error != nil {
+		return nil, transaction.Error
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			transaction.Rollback()
+		}
+	}()
+
+	terminalSessions := transaction.Model(&models.ScanSession{}).Where("status IN ?", terminalSessionStatuses())
+	var deleted int64
+	if err := terminalSessions.Count(&deleted).Error; err != nil {
+		return nil, err
+	}
+	if deleted == 0 {
+		if err := transaction.Commit().Error; err != nil {
+			return nil, err
+		}
+		committed = true
+		return &DeleteSessionsResponse{}, nil
+	}
+
+	terminalSessionIDs := transaction.Model(&models.ScanSession{}).Select("id").Where("status IN ?", terminalSessionStatuses())
+	if err := transaction.Where("scan_session_id IN (?)", terminalSessionIDs).Delete(&models.Permission{}).Error; err != nil {
+		return nil, err
+	}
+	if err := transaction.Where("scan_session_id IN (?)", terminalSessionIDs).Delete(&models.PermissionChange{}).Error; err != nil {
+		return nil, err
+	}
+	if err := transaction.Model(&models.RiskFinding{}).
+		Where("last_session_id IN (?)", terminalSessionIDs).
+		Update("last_session_id", "").Error; err != nil {
+		return nil, err
+	}
+	if err := transaction.Where("status IN ?", terminalSessionStatuses()).Delete(&models.ScanSession{}).Error; err != nil {
+		return nil, err
+	}
+	if err := transaction.Commit().Error; err != nil {
+		return nil, err
+	}
+	committed = true
+
+	return &DeleteSessionsResponse{Deleted: int(deleted)}, nil
+}
+
+func terminalSessionStatuses() []string {
+	return []string{"completed", "failed", "cancelled", "canceled"}
+}
+
+func sessionIDStrings(sessionIDs []uuid.UUID) []string {
+	result := make([]string, 0, len(sessionIDs))
+	for _, id := range sessionIDs {
+		result = append(result, id.String())
+	}
+	return result
 }
 
 func (service *Service) GetSessionBundle(id string) (*SessionBundleResponse, error) {
